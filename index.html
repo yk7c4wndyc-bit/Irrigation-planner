@@ -25,7 +25,19 @@ function msg(t){$('message').textContent=t;}
 function normState(s){if(!s||typeof s!=='object'||!s.positions||!Number.isInteger(s.day)||s.day<1)throw Error('Invalid progress data');const p={};for(const n of ids){let v=Number(s.positions[n]);p[n]=Number.isInteger(v)&&v>=1&&v<=route(n).length?v:1;}return {day:s.day,positions:p,completed:Object.fromEntries(ids.filter(n=>s.completed?.[n]).map(n=>[n,true]))};}
 function show(){let done=ids.filter(isDone).length;$('counter').textContent=done+' / '+ids.length;$('daynum').textContent=state.day;const n=selected,r=route(n),p=next(n),last=r.length;let returning=(p===1&&state.day>1);$('targetText').textContent=`${n===13?'K-line':'Sprinkler'} ${n}: Position ${p} of ${last}. ${returning?'CLOCKWISE RETURN directly to position 1.':'Follow the marked route counterclockwise.'}`;$('shiftInfo').textContent=done===ids.length?'All shifts marked complete. Ready to start next shift day.':`${ids.length-done} units still to move today.`;$('complete').textContent=isDone(n)?'Already marked moved':'Mark selected moved';$('complete').disabled=isDone(n);$('undo').disabled=!isDone(n);$('mapComplete').disabled=isDone(n);$('mapComplete').textContent=isDone(n)?'✓ Lateral marked in position':'✓ Mark lateral in position';$('mapUndo').disabled=!isDone(n);$('follow').textContent='Follow: '+(follow?'on':'off');$('mapFollow').textContent='📍 Follow '+(follow?'on':'off');$('unitList').innerHTML='';for(const id of ids){const item=document.createElement('div');item.className='unit'+(id===selected?' active':'')+(isDone(id)?' done':'');const pick=document.createElement('button');pick.className='pick';pick.textContent=`${id===13?'K-line':'Sprinkler'} ${id} · Position ${next(id)}/${route(id).length}`;pick.onclick=()=>setSelected(id,true);const badge=document.createElement('span');badge.className='pill';badge.textContent=isDone(id)?'✓ moved':'pending';const check=document.createElement('button');check.textContent=isDone(id)?'↶':'✓';check.title=isDone(id)?'Undo completion':'Mark moved';check.onclick=()=>{selected=id;setDone(id,!isDone(id));};item.append(pick,badge,check);$('unitList').appendChild(item);}updateDistance();renderMap();}
 function setSelected(n,zoom=false){selected=n;$('unitSelect').value=String(n);show();if(zoom&&map&&target(n))map.setView(target(n),19);}
-function setDone(n,done){if(done)state.completed[n]=true;else delete state.completed[n];persist();show();}
+function setDone(n,done){
+ if(done){
+  if(state.completed[n])return;
+  state.completed[n]=true;
+  const start=ids.indexOf(n);
+  const nextUnit=ids.slice(start+1).concat(ids.slice(0,start+1)).find(id=>!state.completed[id]);
+  persist();
+  if(nextUnit!==undefined){setSelected(nextUnit,true);}
+  else {show();msg('All laterals marked in position for today.');}
+ }else{
+  delete state.completed[n];persist();show();
+ }
+}
 function advance(){const count=ids.filter(isDone).length;if(count!==ids.length&&!confirm(`${ids.length-count} units are not marked moved. Start the next shift day anyway?`))return;for(const n of ids)state.positions[n]=next(n)%route(n).length+1;state.completed={};state.day++;persist();show();}
 function reset(){if(!confirm('Reset EVERY unit to Position 1 and start Day 1? Your saved route coordinates will remain unchanged.'))return;state={day:1,positions:Object.fromEntries(ids.map(n=>[n,1])),completed:{}};persist();show();}
 function icon(n){return L.divIcon({className:'',html:`<div class="map-pin ${n===13?'kline':''} ${n===selected?'selected':''} ${isDone(n)?'done':''}">${n}</div>`,iconSize:[29,29],iconAnchor:[14,14]});}
