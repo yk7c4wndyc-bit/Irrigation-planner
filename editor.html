@@ -24,19 +24,28 @@ function draw(){
  layer.clearLayers();const n=num(),e=original.sourceLayout.equipment.find(e=>e.num===n);
  L.circleMarker([e.lat,e.lng],{radius:7,color:'#fff',fillColor:'#ef6053',fillOpacity:1}).addTo(layer).bindTooltip('Hydrant '+n,{permanent:true,direction:'left'});
  L.polyline(original.routes[n],{color:'#72caff',weight:2,dashArray:'5,6',opacity:.6,interactive:false}).addTo(layer);const other=n===5?6:5;
+ const reference=original.sourceLayout.equipment.find(e=>e.num===7);
+ (original.routes[7]||[]).forEach((p,i)=>{
+ L.circle(p,{radius:reference.throw,color:'#83f59e',weight:2,fillOpacity:.04,interactive:false}).addTo(layer);
+ L.marker(p,{interactive:false,icon:L.divIcon({className:'',html:'<div style="background:#83f59e;color:#102521;border:1px solid white;border-radius:5px;padding:2px 3px;font-size:11px;font-weight:800;white-space:nowrap">7.'+(i+1)+'</div>',iconSize:[30,20],iconAnchor:[15,10]})}).addTo(layer);
+ });
+ routes[other].forEach(p=>L.circle(p,{radius:original.sourceLayout.equipment.find(e=>e.num===other).throw,color:'#c8cdd0',weight:2,fillOpacity:.035,interactive:false}).addTo(layer));
+
  if(routes[other].length)L.polyline(routes[other],{color:'#bbc7c0',weight:2,opacity:.5,interactive:false}).addTo(layer);
  if(routes[n].length)L.polyline(routes[n],{color:'#ffe28c',weight:2,interactive:false}).addTo(layer);
  routes[n].forEach((p,i)=>{
+ const spray=L.circle(p,{radius:e.throw,color:'#ffe28c',weight:2,fillOpacity:.06,interactive:false}).addTo(layer);
  const marker=L.marker(p,{draggable:true,icon:L.divIcon({className:'',html:'<div class="pin '+(selected===i?'chosen':'')+'">'+(i+1)+'</div>',iconSize:[34,34],iconAnchor:[17,17]})}).addTo(layer);
  marker.on('click',ev=>{L.DomEvent.stopPropagation(ev);selected=i;draw();});
+ marker.on('drag',()=>spray.setLatLng(marker.getLatLng()));
  marker.on('dragstart',()=>{snapshot();selected=i;});
  marker.on('dragend',()=>{const p=marker.getLatLng();routes[n][i]=[p.lat,p.lng];save();draw();});
  });
  $('del').disabled=selected===null;$('undo').disabled=!history.length;
  $('add').classList.toggle('active',adding);$('add').textContent='Add positions: '+(adding?'on':'off');
- $('help').textContent='Lateral '+n+' · '+routes[n].length+' positions. '+(adding?'Tap the map to add the next position. ':'Drag markers to move positions. ')+'Blue dashed line = fence-down route. Position 1 is the first stop; add the rest in movement order.';
+ $('help').textContent='Lateral '+n+' · '+routes[n].length+' positions. '+(adding?'Tap the map to add the next position. ':'Drag markers to move positions. ')+'Yellow circles = selected lateral (17 m radius). Grey = other edited lateral. Green = lateral 7 (16 m radius). Blue dashed line = fence-down route. Position 1 is the first stop; add the rest in movement order.';
 }
-function fit(){const n=num(),e=original.sourceLayout.equipment.find(e=>e.num===n);map.fitBounds(L.latLngBounds([[e.lat,e.lng],...routes[n]]).pad(.25),{maxZoom:19});}
+function fit(){const n=num(),e=original.sourceLayout.equipment.find(e=>e.num===n);map.fitBounds(L.latLngBounds([[e.lat,e.lng],...original.routes[n],...routes[n],...original.routes[7]]).pad(.25),{maxZoom:19});}
 map.on('click',ev=>{if(!adding)return;snapshot();routes[num()].push([ev.latlng.lat,ev.latlng.lng]);selected=routes[num()].length-1;save();draw();});
 $('unit').onchange=()=>{selected=null;adding=false;draw();fit();};
 $('add').onclick=()=>{adding=!adding;draw();};
