@@ -45,14 +45,15 @@ function next(n){let p=Number(state.positions[n]||1);return p>route(n).length?1:
 function target(n){return route(n)[next(n)-1];}
 function currentIndex(n){const p=state.currentPositions?.[n];return Number.isInteger(p)&&p>=1&&p<=route(n).length?p:(isDone(n)?next(n):(state.day===1?1:(next(n)+route(n).length-2)%route(n).length+1));}
 function currentPoint(n){return route(n)[currentIndex(n)-1];}
-let lastCameraAt=0;
+let lastCameraAt=0,overviewStart=null,overviewActive=false;
 function fitMovement(includeGPS=true,force=false){
+ if(overviewActive&&overviewStart&&locationPoint&&distanceM(overviewStart,[locationPoint.lat,locationPoint.lng])>=15)overviewActive=false;
  if(!map||!target(selected))return;
  if(!force&&(!follow||gpsWatch===null))return;
  const now=Date.now();if(!force&&now-lastCameraAt<2500)return;lastCameraAt=now;
  let bounds=L.latLngBounds([currentPoint(selected),target(selected)]);
  if(includeGPS&&locationPoint){const here=L.latLng(locationPoint.lat,locationPoint.lng);bounds.extend(here.toBounds(Math.max(12,Math.min(locationPoint.accuracy||12,50))*2));}
- const size=map.getSize();map.fitBounds(bounds,{paddingTopLeft:[Math.min(50,size.x*.12),Math.min(120,size.y*.28)],paddingBottomRight:[Math.min(50,size.x*.12),Math.min(90,size.y*.22)],maxZoom:19.5,animate:false});
+ const size=map.getSize();map.fitBounds(bounds,{paddingTopLeft:[Math.min(50,size.x*.12),Math.min(120,size.y*.28)],paddingBottomRight:[Math.min(50,size.x*.12),Math.min(90,size.y*.22)],maxZoom:overviewActive?17.5:19.5,animate:false});
 }
 function drawMovement(){
  const n=selected,p=currentPoint(n),t=target(n);if(!p||!t)return;
@@ -80,7 +81,7 @@ function setDone(n,done){
   const start=ids.indexOf(n);
   const nextUnit=ids.slice(start+1).concat(ids.slice(0,start+1)).find(id=>!state.completed[id]);
   persist();
-  if(nextUnit!==undefined){setSelected(nextUnit,true,19-Math.log2(1.75));}
+  if(nextUnit!==undefined){overviewActive=true;overviewStart=locationPoint?[locationPoint.lat,locationPoint.lng]:null;setSelected(nextUnit,true);}
   else {show();msg('All laterals marked in position for today.');}
  }else{
   state.currentPositions??={};if(state.beforeMove?.[n])state.currentPositions[n]=state.beforeMove[n];delete state.completed[n];persist();show();
