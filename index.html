@@ -107,30 +107,48 @@ function reset(){if(!confirm('Reset EVERY unit to Position 1 and start Day 1? Yo
 function icon(n){return L.divIcon({className:'',html:`<div class="map-pin  ${n===selected?'selected':''} ${isDone(n)?'done':''}">${n}</div>`,iconSize:[29,29],iconAnchor:[14,14]});}
 function renderMap(){if(!map)return;positionLayer.clearLayers();outlineLayer.clearLayers();allLayer.clearLayers();if($('showPaddocks').checked){for(const pad of base.sourceLayout.paddocks){L.polygon(pad.points,{color:'#f8e5aa',weight:1,fillOpacity:.02}).addTo(outlineLayer).bindTooltip(pad.name);}}for(const e of base.sourceLayout.obstacles||[]){L.circleMarker([e.lat,e.lng],{radius:5,color:e.type==='pole'?'#f34949':'#fff4aa',fillOpacity:.85}).addTo(outlineLayer).bindTooltip(e.type==='pole'?'Power pole':'Water trough');}for(const n of ids){const p=target(n),e=equipment[n];if(!p)continue;if(n!==selected){const marker=L.marker(p,{icon:icon(n),zIndexOffset:0}).addTo(positionLayer);marker.bindPopup(`${e.name}: target position ${next(n)} / ${route(n).length}`);marker.on('click',()=>setSelected(n));}if(n!==selected&&$('showCoverage').checked&&typeof e.throw==='number')L.circle(p,{radius:e.throw,color:n===selected?'#3be0c2':'#56c9ec',weight:n===selected?2:1,fillOpacity:(n===selected?0.13:0.045),interactive:false}).addTo(positionLayer);}if($('showAll').checked){for(const [i,p] of route(selected).entries()){if(i!==next(selected)-1)L.circleMarker(p,{radius:4,color:'#ffe082',weight:1,fillOpacity:.8}).addTo(allLayer).bindTooltip(`Position ${i+1}`);}}const crosshairPosition=target(selected);if(crosshairPosition){targetCrosshair=L.marker(crosshairPosition,{interactive:false,zIndexOffset:950,icon:L.divIcon({className:'',html:'<div class="lateral-crosshair" aria-label="Selected lateral target"></div>',iconSize:[60,60],iconAnchor:[30,30]})}).addTo(positionLayer);}drawMovement();drawHydrants();if(selected===13&&route(13).length>1){L.polyline(route(13),{color:'#ffd07b',weight:2,opacity:.7,dashArray:'5,7'}).addTo(allLayer);} }
 function distanceM(a,b){const rad=x=>x*Math.PI/180;let dLat=rad(b[0]-a[0]),dLng=rad(b[1]-a[1]);let q=Math.sin(dLat/2)**2+Math.cos(rad(a[0]))*Math.cos(rad(b[0]))*Math.sin(dLng/2)**2;return 6371000*2*Math.atan2(Math.sqrt(q),Math.sqrt(1-q));}
-let previousFix=null,lastSpokenCue='',lastSpokenAt=0;
-function bearingDegrees(a,b){const rad=Math.PI/180,y=Math.sin((b[1]-a[1])*rad)*Math.cos(b[0]*rad),x=Math.cos(a[0]*rad)*Math.sin(b[0]*rad)-Math.sin(a[0]*rad)*Math.cos(b[0]*rad)*Math.cos((b[1]-a[1])*rad);return (Math.atan2(y,x)/rad+360)%360;}
+let lastSpokenCue='',lastSpokenAt=0,voiceMoveLateral=null,voicePickupReached=false;
+const PICKUP_AUDIO_RADIUS_M=18,VOICE_INTERVAL_MS=4000;
+function resetVoiceGuidance(){voiceMoveLateral=null;voicePickupReached=false;lastSpokenCue='';lastSpokenAt=0;}
 function updateDistance(){
  $('dropNow').hidden=true;
  const label=$('hudDistance'),arrow=$('turnArrow');
  if(!locationPoint){$('distanceText').textContent='GPS not started.';label.textContent='Start GPS for distance';arrow.textContent='↑';return;}
- const p=target(selected);if(!p)return;
- const here=[locationPoint.lat,locationPoint.lng],exactMeters=distanceM(here,p),meters=Math.round(exactMeters);
+ const destination=target(selected);if(!destination)return;
+ const here=[locationPoint.lat,locationPoint.lng],exactMeters=distanceM(here,destination),meters=Math.round(exactMeters);
  if(gpsWatch!==null&&!isDone(selected)&&exactMeters<=2){$('dropNow').hidden=false;$('dropNowText').textContent='Lateral '+selected+' · tap to mark in position & go to next';$('dropNowAccuracy').textContent='GPS distance '+exactMeters.toFixed(1)+' m · accuracy ±'+Math.round(locationPoint.accuracy||0)+' m';}
  const accuracy=Math.round(locationPoint.accuracy||0);
  $('distanceText').textContent=`Distance to target: ${meters} m · GPS accuracy ±${accuracy} m`;
  label.textContent=`${meters} m to target · ±${accuracy} m GPS`;
- const heading=Number.isFinite(locationPoint.heading)?locationPoint.heading:null;
- const relative=heading===null?null:((bearingDegrees(here,p)-heading+540)%360)-180;
- let cue='';if(meters<=Math.max(6,accuracy)){arrow.textContent='◎';cue='Near target';}
- else if(relative===null){arrow.textContent='↑';arrow.title='Direction unavailable until moving';}
- else if(relative>35){arrow.textContent='↱';cue='Right';}
- else if(relative< -35){arrow.textContent='↰';cue='Left';}
- else {arrow.textContent='↑';cue='Straight';}
- arrow.setAttribute('aria-label',cue||'Heading unavailable');
+ if(voiceMoveLateral!==selected){resetVoiceGuidance();voiceMoveLateral=selected;}
+ const pickup=currentPoint(selected);
+ const pickupDistance=pickup?distanceM(here,pickup):Infinity;
+ if(pickupDistance<=PICKUP_AUDIO_RADIUS_M)voicePickupReached=true;
+ let cue='';
+ if(!voicePickupReached||isDone(selected)||!pickup||distanceM(pickup,destination)<1){
+  arrow.textContent='↑';
+  arrow.title=voicePickupReached?'No movement guidance needed':'Voice guidance starts near the pickup position';
+ }else if(exactMeters<=Math.max(3,Math.min(6,accuracy))){
+  arrow.textContent='◎';arrow.title='Near drop position';
+ }else{
+  // Local east/north metres: positive cross-product means the GPS is LEFT
+  // of the straight pickup-to-drop line, so tell the operator to move RIGHT.
+  const lat0=pickup[0]*Math.PI/180;
+  const eastScale=111320*Math.cos(lat0),northScale=111195;
+  const vx=(destination[1]-pickup[1])*eastScale,vy=(destination[0]-pickup[0])*northScale;
+  const px=(here[1]-pickup[1])*eastScale,py=(here[0]-pickup[0])*northScale;
+  const length=Math.hypot(vx,vy);
+  const signedLeft=(vx*py-vy*px)/length;
+  const tolerance=Math.max(2,Math.min(5,accuracy*0.65));
+  if(signedLeft>tolerance){cue='Right';arrow.textContent='↱';}
+  else if(signedLeft< -tolerance){cue='Left';arrow.textContent='↰';}
+  else {arrow.textContent='↑';arrow.title='On movement line';}
+ }
+ arrow.setAttribute('aria-label',cue||'On course or outside guidance area');
  const now=Date.now();
- if(cue&&cue!==lastSpokenCue&&now-lastSpokenAt>10000&&'speechSynthesis' in window){
+ if(cue&&gpsWatch!==null&&now-lastSpokenAt>=VOICE_INTERVAL_MS&&'speechSynthesis' in window){
   lastSpokenCue=cue;lastSpokenAt=now;
-  try{const utterance=new SpeechSynthesisUtterance(cue);utterance.lang='en-AU';utterance.rate=1;window.speechSynthesis.speak(utterance);}catch(e){}
+  try{window.speechSynthesis.cancel();const utterance=new SpeechSynthesisUtterance(cue);utterance.lang='en-AU';utterance.rate=1.1;window.speechSynthesis.speak(utterance);}catch(e){}
  }
 }
 let gpsWatch=null;function refreshMapSize(){
@@ -148,7 +166,7 @@ function setMapFullscreen(enabled){
 window.addEventListener('resize',refreshMapSize);
 window.visualViewport?.addEventListener('resize',refreshMapSize);
 document.addEventListener('keydown',event=>{if(event.key==='Escape')setMapFullscreen(false);});
-function startGPS(){if(!navigator.geolocation){msg('GPS is unavailable in this browser.');return;}if(gpsWatch!==null){navigator.geolocation.clearWatch(gpsWatch);gpsWatch=null;$('dropNow').hidden=true;$('gps').textContent='📍 Start live GPS';$('mapStopGPS').hidden=true;setMapFullscreen(false);return;}if(!window.isSecureContext){msg('Live GPS requires HTTPS. This local HTML file is not a secure site. Publish it to HTTPS before using GPS on iPhone.');return;}setMapFullscreen(true);msg('Requesting location permission…');gpsWatch=navigator.geolocation.watchPosition(p=>{locationPoint={lat:p.coords.latitude,lng:p.coords.longitude,accuracy:p.coords.accuracy};gpsLayer.clearLayers();L.circle([locationPoint.lat,locationPoint.lng],{radius:p.coords.accuracy,color:'#347fff',weight:1,fillOpacity:.07}).addTo(gpsLayer);L.circleMarker([locationPoint.lat,locationPoint.lng],{radius:7,color:'#fff',weight:2,fillColor:'#347fff',fillOpacity:1}).addTo(gpsLayer);if(follow)fitMovement(true);locationPoint.heading=p.coords.heading;updateDistance();msg('GPS is active.');},err=>{$('dropNow').hidden=true;msg('GPS error: '+err.message);},{enableHighAccuracy:true,maximumAge:2000,timeout:15000});$('gps').textContent='Stop GPS';$('mapStopGPS').hidden=false;}
+function startGPS(){if(!navigator.geolocation){msg('GPS is unavailable in this browser.');return;}if(gpsWatch!==null){navigator.geolocation.clearWatch(gpsWatch);gpsWatch=null;resetVoiceGuidance();$('dropNow').hidden=true;$('gps').textContent='📍 Start live GPS';$('mapStopGPS').hidden=true;setMapFullscreen(false);return;}if(!window.isSecureContext){msg('Live GPS requires HTTPS. This local HTML file is not a secure site. Publish it to HTTPS before using GPS on iPhone.');return;}setMapFullscreen(true);msg('Requesting location permission…');gpsWatch=navigator.geolocation.watchPosition(p=>{locationPoint={lat:p.coords.latitude,lng:p.coords.longitude,accuracy:p.coords.accuracy};gpsLayer.clearLayers();L.circle([locationPoint.lat,locationPoint.lng],{radius:p.coords.accuracy,color:'#347fff',weight:1,fillOpacity:.07}).addTo(gpsLayer);L.circleMarker([locationPoint.lat,locationPoint.lng],{radius:7,color:'#fff',weight:2,fillColor:'#347fff',fillOpacity:1}).addTo(gpsLayer);if(follow)fitMovement(true);locationPoint.heading=p.coords.heading;updateDistance();msg('GPS is active.');},err=>{$('dropNow').hidden=true;msg('GPS error: '+err.message);},{enableHighAccuracy:true,maximumAge:2000,timeout:15000});$('gps').textContent='Stop GPS';$('mapStopGPS').hidden=false;}
 function download(name,obj){const blob=new Blob([JSON.stringify(obj,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 function init(){$('repairWarning').onclick=()=>openRepairs(selected);$('repairNotes').oninput=saveRepairs;$('repairClose').onclick=()=>$('repairDialog').close();$('repairClear').onclick=()=>{for(const input of $('repairChoices').querySelectorAll('input'))input.checked=false;$('repairNotes').value='';saveRepairs();};$('repairDialog').addEventListener('close',()=>repairReturnFocus?.focus?.());$('dropNow').onclick=()=>{if(gpsWatch===null||!locationPoint||isDone(selected)||distanceM([locationPoint.lat,locationPoint.lng],target(selected))>2){$('dropNow').hidden=true;return;}setDone(selected,true);};$('fenceToggle').onclick=toggleFence;for(const n of ids){if(!route(n).length){msg('Missing positions for unit '+n);}}state=normState(state);$('unitSelect').innerHTML=ids.map(n=>`<option value="${n}">Lateral ${n} (${route(n).length} positions)</option>`).join('');$('unitSelect').value='1';$('unitSelect').onchange=ev=>setSelected(Number(ev.target.value),true);$('focus').onclick=()=>setSelected(selected,true);$('complete').onclick=()=>setDone(selected,true);$('undo').onclick=undoLastMove;$('mapComplete').onclick=()=>setDone(selected,true);$('mapUndo').onclick=undoLastMove;$('advance').onclick=advance;$('reset').onclick=reset;$('gps').onclick=startGPS;$('mapStopGPS').onclick=startGPS;$('mapFullscreen').onclick=()=>setMapFullscreen(!document.body.classList.contains('map-fullscreen'));$('follow').onclick=()=>{follow=!follow;show();if(follow)fitMovement(true,true);};$('mapFollow').onclick=()=>{follow=!follow;show();if(follow&&locationPoint&&map)fitMovement(true,true);};for(const id of ['showCoverage','showPaddocks','showAll'])$(id).onchange=renderMap;$('export').onclick=()=>{const snapshot=structuredClone(state);const backup={...base,exportedAt:new Date().toISOString(),portableFenceRoutes:structuredClone(fenceRoutes),hydrantRepairs:structuredClone(repairs),shiftProgress:snapshot};download('irrigation-routes-and-progress-'+new Date().toISOString().slice(0,10)+'.json',backup);msg('Backup prepared for download. Your shift and positions have not changed.');};$('import').onclick=()=>$('file').click();$('file').onchange=async(ev)=>{const file=ev.target.files[0];if(!file)return;try{let incoming=JSON.parse(await file.text());if(incoming.portableFenceRoutes){if(!validFence(incoming.portableFenceRoutes))throw Error('Both fence-up routes must contain valid positions.');localStorage.setItem(fenceKey,JSON.stringify(incoming.portableFenceRoutes));fenceRoutes=incoming.portableFenceRoutes;for(const n of [5,6]){state.positions[n]=1;state.currentPositions??={};state.currentPositions[n]=1;delete state.completed[n];}persist();show();msg('Fence-up routes imported. Laterals 5 and 6 reset to Position 1.');if(!incoming.shiftProgress)return;}if(incoming.routes&&JSON.stringify(incoming.routes)!==JSON.stringify(base.routes))throw Error('This backup has different route positions. To protect your current routes, no changes were imported.');state=normState(incoming.shiftProgress||incoming);if(incoming.hydrantRepairs){repairs=normalizeRepairs(incoming.hydrantRepairs);localStorage.setItem(repairKey,JSON.stringify(repairs));}persist();show();msg('Progress and any included repairs imported successfully.');}catch(err){msg('Import failed: '+err.message);}finally{ev.target.value='';}};if(typeof L==='undefined'){msg('Map library could not load. Connect to internet and reopen the app.');show();return;}const coords=Object.values(base.routes).flat(),bounds=L.latLngBounds(coords);map=L.map('map',{preferCanvas:true,zoomControl:true,zoomSnap:0.1,zoomDelta:0.5}).fitBounds(bounds.pad(.10));L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:21,maxNativeZoom:18,keepBuffer:4,updateWhenZooming:false,attribution:'Imagery © Esri and contributors'}).addTo(map);map.on('dragstart',()=>{follow=false;show();});outlineLayer=L.layerGroup().addTo(map);positionLayer=L.layerGroup().addTo(map);allLayer=L.layerGroup().addTo(map);gpsLayer=L.layerGroup().addTo(map);show();new ResizeObserver(refreshMapSize).observe(document.querySelector('.mapwrap'));setTimeout(()=>map.invalidateSize(),100);}
 window.addEventListener('error',e=>{msg('Application error: '+e.message);});try{init();}catch(e){msg('Application failed to initialise: '+e.message);console.error(e);}
