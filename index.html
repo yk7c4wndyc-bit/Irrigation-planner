@@ -77,7 +77,15 @@ function drawHydrants(){for(const n of ids){const e=equipment[n];L.marker([e.lat
 function route(n){return state.fenceUp&&[5,6].includes(Number(n))?fenceRoutes[n]||[]:base.routes[String(n)]||[];}
 function toggleFence(){if(!state.fenceUp&&!validFence(fenceRoutes)){msg('Mark and export fence-up positions for both 5 and 6 in the editor, then import that file here.');return;}state.fenceUp=!state.fenceUp;for(const n of [5,6]){state.positions[n]=1;state.currentPositions??={};state.currentPositions[n]=1;delete state.completed[n];}persist();show();msg('Portable fence '+(state.fenceUp?'up':'down')+' — laterals 5 and 6 reset to Position 1.');}
 
-function next(n){let p=Number(state.positions[n]||1);return p>route(n).length?1:p;}
+function next(n){
+  const length=route(n).length;
+  const saved=Number(state.positions[n]||1);
+  const current=state.currentPositions?.[n];
+  if(state.day>1&&!isDone(n)&&Number.isInteger(current)&&current>=1&&current<=length&&saved!==current){
+    return current%length+1;
+  }
+  return saved>length?1:saved;
+}
 function target(n){return route(n)[next(n)-1];}
 function currentIndex(n){const p=state.currentPositions?.[n];return Number.isInteger(p)&&p>=1&&p<=route(n).length?p:(isDone(n)?next(n):(state.day===1?1:(next(n)+route(n).length-2)%route(n).length+1));}
 function currentPoint(n){return route(n)[currentIndex(n)-1];}
@@ -203,7 +211,7 @@ function setDone(n,done){if(state.paused){msg("Resume rotation first.");return;}
   if(state.completed[n])return;
   finishShiftTiming(n);
   state.skipped??={};delete state.skipped[n];
-  state.beforeMove??={};state.currentPositions??={};state.beforeMove[n]=currentIndex(n);state.currentPositions[n]=next(n);state.completed[n]=true;state.moveHistory=(state.moveHistory||[]).filter(id=>id!==n);state.moveHistory.push(n);
+  state.beforeMove??={};state.currentPositions??={};state.beforeMove[n]=currentIndex(n);state.positions[n]=next(n);state.currentPositions[n]=state.positions[n];state.completed[n]=true;state.moveHistory=(state.moveHistory||[]).filter(id=>id!==n);state.moveHistory.push(n);
   const start=ids.indexOf(n);
   const nextUnit=ids.slice(start+1).concat(ids.slice(0,start+1)).find(id=>!state.completed[id]);
   persist();
@@ -213,7 +221,7 @@ function setDone(n,done){if(state.paused){msg("Resume rotation first.");return;}
   state.currentPositions??={};if(state.beforeMove?.[n])state.currentPositions[n]=state.beforeMove[n];delete state.completed[n];if(state.skipped)delete state.skipped[n];state.moveHistory=(state.moveHistory||[]).filter(id=>id!==n);state.timingHistory=(state.timingHistory||[]).filter(x=>!(x.day===state.day&&x.lateral===n));if(gpsWatch!==null&&selected===n)beginShiftTiming(n);persist();show();
  }
 }
-function advance(){if(state.paused){msg("Resume rotation first.");return;}const count=ids.filter(isDone).length;if(count!==ids.length&&!confirm(`${ids.length-count} units are not marked moved or skipped. Start the next shift day anyway?`))return;state.currentPositions??={};for(const n of ids){const at=currentIndex(n);state.currentPositions[n]=at;state.positions[n]=(isSkipped(n)?at:next(n))%route(n).length+1;}state.completed={};state.skipped={};state.moveHistory=[];state.day++;state.activeTiming=null;state.paused=false;dropButtonLatchedFor=null;selected=ids[0];state.selectedUnit=selected;persist();setSelected(selected,true);if(gpsWatch===null)startGPS();else {setMapFullscreen(true);updateDistance();}}
+function advance(){if(state.paused){msg("Resume rotation first.");return;}const count=ids.filter(isDone).length;if(count!==ids.length&&!confirm(`${ids.length-count} units are not marked moved or skipped. Start the next shift day anyway?`))return;state.currentPositions??={};for(const n of ids){const at=currentIndex(n);state.currentPositions[n]=at;state.positions[n]=at%route(n).length+1;}state.completed={};state.skipped={};state.moveHistory=[];state.day++;state.activeTiming=null;state.paused=false;dropButtonLatchedFor=null;selected=ids[0];state.selectedUnit=selected;persist();setSelected(selected,true);if(gpsWatch===null)startGPS();else {setMapFullscreen(true);updateDistance();}}
 function reset(){if(!confirm('Reset EVERY unit to Position 1 and start Day 1? Your saved route coordinates will remain unchanged.'))return;state={day:1,lateral12PositionsUpdated:true,currentPositions:Object.fromEntries(ids.map(n=>[n,1])),fenceUp:!!state.fenceUp,positions:Object.fromEntries(ids.map(n=>[n,1])),completed:{},timingHistory:state.timingHistory||[],activeTiming:null,paused:false,selectedUnit:ids[0]};selected=ids[0];persist();show();}
 function icon(n){return L.divIcon({className:'',html:`<div class="map-pin  ${n===selected?'selected':''} ${isDone(n)?'done':''}">${n}</div>`,iconSize:[29,29],iconAnchor:[14,14]});}
 function renderMap(){if(!map)return;positionLayer.clearLayers();outlineLayer.clearLayers();allLayer.clearLayers();if($('showPaddocks').checked){for(const pad of base.sourceLayout.paddocks){L.polygon(pad.points,{color:'#f8e5aa',weight:1,fillOpacity:.02}).addTo(outlineLayer).bindTooltip(pad.name);}}for(const e of base.sourceLayout.obstacles||[]){L.circleMarker([e.lat,e.lng],{radius:5,color:e.type==='pole'?'#f34949':'#fff4aa',fillOpacity:.85}).addTo(outlineLayer).bindTooltip(e.type==='pole'?'Power pole':'Water trough');}for(const n of ids){const p=target(n),e=equipment[n];if(!p)continue;if(n!==selected){const marker=L.marker(p,{icon:icon(n),zIndexOffset:0}).addTo(positionLayer);marker.bindPopup(`${e.name}: target position ${next(n)} / ${route(n).length}`);marker.on('click',()=>setSelected(n));}if(n!==selected&&$('showCoverage').checked&&typeof e.throw==='number')L.circle(p,{radius:e.throw,color:n===selected?'#3be0c2':'#56c9ec',weight:n===selected?2:1,fillOpacity:(n===selected?0.13:0.045),interactive:false}).addTo(positionLayer);}if($('showAll').checked){for(const [i,p] of route(selected).entries()){if(i!==next(selected)-1)L.circleMarker(p,{radius:4,color:'#ffe082',weight:1,fillOpacity:.8}).addTo(allLayer).bindTooltip(`Position ${i+1}`);}}const crosshairPosition=target(selected);if(crosshairPosition){targetCrosshair=L.marker(crosshairPosition,{interactive:false,zIndexOffset:950,icon:L.divIcon({className:'',html:'<div class="lateral-crosshair current-crosshair" aria-label="Selected lateral target"></div>',iconSize:[60,60],iconAnchor:[30,30]})}).addTo(positionLayer);}drawMovement();drawHydrants();if(selected===13&&route(13).length>1){L.polyline(route(13),{color:'#ffd07b',weight:2,opacity:.7,dashArray:'5,7'}).addTo(allLayer);} }
