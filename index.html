@@ -427,7 +427,7 @@ function deleteAdjustment(){
 function updateAdjustmentButtons(){
  $('toggleAdjustments').textContent=showAdjustments?'Hide adjustments':'Show adjustments';
  $('toggleAdjustments').setAttribute('aria-pressed',String(showAdjustments));
- $('mapToggleAdjustments').textContent=showAdjustments?'Hide notes':'Show notes';
+
 }
 function toggleAdjustmentVisibility(){showAdjustments=!showAdjustments;renderMap();updateAdjustmentButtons();}
 function drawAdjustments(){
