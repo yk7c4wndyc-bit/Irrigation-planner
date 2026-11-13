@@ -580,7 +580,7 @@ function toggleRotationPause(){
 }
 function download(name,obj){const blob=new Blob([JSON.stringify(obj,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 function init(){
- $('addAdjustment').onclick=()=>openAdjustment();$('mapAdjustment').onclick=()=>openAdjustment();$('toggleAdjustments').onclick=toggleAdjustmentVisibility;$('mapToggleAdjustments').onclick=toggleAdjustmentVisibility;$('adjustmentPosition').onchange=loadAdjustmentFields;$('adjustmentDirection').oninput=()=>$('adjustmentDegrees').textContent=$('adjustmentDirection').value+'°';$('saveAdjustment').onclick=saveAdjustment;$('deleteAdjustment').onclick=deleteAdjustment;$('cancelAdjustment').onclick=()=>$('adjustmentDialog').close();updateAdjustmentButtons();
+ $('addAdjustment').onclick=()=>openAdjustment();$('toggleAdjustments').onclick=toggleAdjustmentVisibility;$('adjustmentPosition').onchange=loadAdjustmentFields;$('adjustmentDirection').oninput=()=>$('adjustmentDegrees').textContent=$('adjustmentDirection').value+'°';$('saveAdjustment').onclick=saveAdjustment;$('deleteAdjustment').onclick=deleteAdjustment;$('cancelAdjustment').onclick=()=>$('adjustmentDialog').close();updateAdjustmentButtons();
  $('positionCurrent').onclick=()=>updateSinglePosition(false);
  $('positionNext').onclick=()=>updateSinglePosition(true);
  $('positionCancel').onclick=()=>$('positionDialog').close();
