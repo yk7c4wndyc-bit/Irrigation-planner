@@ -138,8 +138,8 @@ function addUI(){
  const planning=el('planningSettings');
  if(planning)planning.insertAdjacentElement('afterend',section);
  else document.querySelector('aside')?.appendChild(section);
- const quick=document.querySelector('#quickPlanningDialog div[style*="flex-direction:column"]');
- if(quick){const b=document.createElement('button');b.textContent='🌀 Pivots';b.type='button';b.onclick=()=>{el('quickPlanningDialog').close();openDialog();};quick.appendChild(b);}
+ const quickButton=el('quickOpenPivots');
+ if(quickButton)quickButton.onclick=()=>{el('quickPlanningDialog').close();openDialog();};
  const dlg=document.createElement('dialog');dlg.id='pivotDialog';dlg.style.cssText='width:min(430px,95vw);max-height:90dvh;overflow:auto;background:#152c27;color:white;border:2px solid #91bea6;border-radius:14px;padding:16px;z-index:5000';
  dlg.innerHTML='<h3>🌀 Pivot tracking</h3><p class="small">Use your finger on the map when marking positions. Recheck the arm to correct predictions.</p>'+
  '<label>Pivot<select id="pivotSelect"><option value="0">Full-circle pivot</option><option value="1">Back-and-forth pivot</option></select></label>'+
