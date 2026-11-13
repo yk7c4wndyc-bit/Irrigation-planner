@@ -17,13 +17,15 @@ function persist(){try{localStorage.setItem(KEY,JSON.stringify(data));}catch(e){
 function mins(t){const [h,m]=t.split(':').map(Number);return h*60+m;}
 function runHours(t0,t1){
  let result=0,start=mins(data.start),end=mins(data.end);
- const day=86400000;
  if(t1<=t0)return 0;
- const begin=Math.floor(t0/day)*day-day,stop=Math.floor(t1/day)*day+day;
- for(let base=begin;base<=stop;base+=day){
-  let a=base+start*60000,b=base+end*60000;
-  if(end<=start)b+=day;
-  result+=Math.max(0,Math.min(t1,b)-Math.max(t0,a))/3600000;
+ // Use local calendar dates rather than UTC days, including DST transitions.
+ const day0=new Date(t0);day0.setHours(0,0,0,0);day0.setDate(day0.getDate()-1);
+ const dayEnd=new Date(t1);dayEnd.setHours(0,0,0,0);dayEnd.setDate(dayEnd.getDate()+1);
+ for(let day=new Date(day0);day<=dayEnd;day.setDate(day.getDate()+1)){
+  const a=new Date(day);a.setHours(Math.floor(start/60),start%60,0,0);
+  const b=new Date(day);b.setHours(Math.floor(end/60),end%60,0,0);
+  if(end<=start)b.setDate(b.getDate()+1);
+  result+=Math.max(0,Math.min(t1,+b)-Math.max(t0,+a))/3600000;
  }
  return result;
 }
@@ -159,7 +161,7 @@ function addUI(){
  el('pivotLimit1').onclick=()=>pointPlace('limit1');
  el('pivotLimit2').onclick=()=>pointPlace('limit2');
  el('pivotClose').onclick=()=>dlg.close();
- el('pivotStop').onclick=()=>{const p=data.pivots[selected];p.stopped=!p.stopped;persist();form();};
+ el('pivotStop').onclick=()=>{const p=data.pivots[selected];const now=Date.now();const last=p.observations.at(-1);const predicted=simulate(p,now);if(last&&predicted){p.observations.push({at:now,angle:predicted.angle,direction:predicted.direction});p.observations=p.observations.slice(-200);}p.stopped=!p.stopped;persist();form();};
  el('pivotSave').onclick=()=>{
   const start=el('pivotStart').value,end=el('pivotEnd').value;
   if(!/^\d\d:\d\d$/.test(start)||!/^\d\d:\d\d$/.test(end)||start===end){alert('Set different start and stop times');return;}
