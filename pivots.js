@@ -65,22 +65,30 @@ function draw(){
   L.circleMarker(centre,{radius:7,color:'#fff',fillColor:i?'#e6a0ff':'#75edfc',fillOpacity:1,weight:2}).addTo(pivotLayer).bindTooltip(p.name+' centre');
   const prediction=simulate(p,now);
   const tip=p.tip,observed=prediction?.angle??(tip?angle(p.centre,tip):null);
-  if(observed===null)return;
   const length=tip?map.distance(centre,[tip.lat,tip.lng]):90;
+  if(p.type==='sector'&&p.bounds?.length){
+    p.bounds.forEach((bearing,index)=>{
+      if(!Number.isFinite(bearing))return;
+      const b=bearing*Math.PI/180;
+      const end=[p.centre.lat+length*Math.cos(b)/111320,p.centre.lng+length*Math.sin(b)/(111320*Math.cos(p.centre.lat*Math.PI/180))];
+      L.polyline([centre,end],{color:'#ffd25e',weight:3,dashArray:'6 5'}).addTo(pivotLayer);
+      L.circleMarker(end,{radius:7,color:'#fff',weight:2,fillColor:'#e6aa32',fillOpacity:1}).addTo(pivotLayer).bindTooltip('Turning limit '+(index+1));
+    });
+  }
+  if(observed===null)return;
   const rad=observed*Math.PI/180,lat=length*Math.cos(rad)/111320,lon=length*Math.sin(rad)/(111320*Math.cos(p.centre.lat*Math.PI/180));
   const to=[p.centre.lat+lat,p.centre.lng+lon];
   L.polyline([centre,to],{color:i?'#e6a0ff':'#75edfc',weight:4,dashArray:prediction?.uncalibrated?'7 7':null}).addTo(pivotLayer).bindTooltip(p.name+(prediction?.uncalibrated?' (needs calibration)':' (estimated)'));
   L.circleMarker(to,{radius:5,color:'#fff',fillColor:i?'#e6a0ff':'#75edfc',fillOpacity:1}).addTo(pivotLayer);
-  if(p.type==='sector'&&p.bounds?.length===2){
-   for(const bearing of p.bounds){const b=bearing*Math.PI/180;L.polyline([centre,[p.centre.lat+length*Math.cos(b)/111320,p.centre.lng+length*Math.sin(b)/(111320*Math.cos(p.centre.lat*Math.PI/180))]],{color:'#d9ba56',weight:2,dashArray:'4 5'}).addTo(pivotLayer);}
-  }
+
  });
 }
 function status(){
  const p=data.pivots[selected],last=p.observations.at(-1),pred=simulate(p,Date.now());
  const deg=pred?pred.angle.toFixed(1)+'°':'Not calibrated';
  const speeds='Clockwise: '+(p.speedCW?.toFixed(2)??'—')+'°/running hr · Anticlockwise: '+(p.speedCCW?.toFixed(2)??'—')+'°/running hr';
- el('pivotStatus').textContent='Estimated angle: '+deg+(pred?.uncalibrated?' (speed unknown)':'')+'\n'+speeds+'\nLast observed: '+(last?new Date(last.at).toLocaleString():'never')+(p.stopped?'\nPAUSED due to fault':'');
+ const limitInfo=p.type==='sector'?'\nFirst turning limit: '+(Number.isFinite(p.bounds[0])?p.bounds[0].toFixed(1)+'° saved':'not marked')+'\nSecond turning limit: '+(Number.isFinite(p.bounds[1])?p.bounds[1].toFixed(1)+'° saved':'not marked'):'';
+ el('pivotStatus').textContent='Estimated angle: '+deg+(pred?.uncalibrated?' (speed unknown)':'')+'\n'+speeds+'\nLast observed: '+(last?new Date(last.at).toLocaleString():'never')+limitInfo+(p.stopped?'\nPAUSED due to fault':'');
  el('pivotStop').textContent=p.stopped?'Resume pivot':'Pause faulty pivot';
  el('pivotMarker').textContent=visible?'Hide pivot arms':'Show pivot arms';
 }
@@ -130,7 +138,15 @@ function sample(atPoint){
   p.direction=d;
  }else if(mode==='limit1'){p.bounds[0]=angle(p.centre,pt);}
  else if(mode==='limit2'){p.bounds[1]=angle(p.centre,pt);}
- persist();form();el('pivotDialog').showModal();
+ persist();form();
+ const names={centre:'Pivot centre',arm:'Pivot arm position',limit1:'First turning limit',limit2:'Second turning limit'};
+ const confirmation=document.createElement('p');
+ confirmation.style.cssText='font-weight:750;color:#b9f1c9;border:1px solid #528a6a;border-radius:8px;padding:9px;';
+ confirmation.textContent='✓ '+names[mode]+' saved at '+(mode.startsWith('limit')?angle(p.centre,pt).toFixed(1)+'°':pt.lat.toFixed(5)+', '+pt.lng.toFixed(5));
+ const old=el('pivotSaveConfirmation');if(old)old.remove();
+ confirmation.id='pivotSaveConfirmation';
+ el('pivotStatus').before(confirmation);
+ el('pivotDialog').showModal();
 }
 function addUI(){
  const section=document.createElement('section');
