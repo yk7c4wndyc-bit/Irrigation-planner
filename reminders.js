@@ -49,7 +49,7 @@ document.querySelector('.mapwrap').appendChild(toast);
 const controls=document.createElement('div');
 controls.style.cssText='display:flex;gap:6px;flex-wrap:wrap;';
 controls.innerHTML='<button type="button" id="gpsReminderAdd">Add GPS reminder</button><button type="button" id="gpsReminderToggle">Show GPS markers</button>';
-const tools=$id('mapTools');tools.appendChild(controls);
+const panel=$id('gpsReminderControls');panel.appendChild(controls);
 const dlg=document.createElement('dialog');dlg.id='gpsReminderDialog';dlg.setAttribute('aria-label','GPS reminder');
 dlg.innerHTML='<form method="dialog" style="min-width:min(340px,85vw);display:grid;gap:10px"><h3 style="margin:0">GPS location reminder</h3><label>Message<input id="gpsReminderText" maxlength="180" placeholder="What should I check?" style="display:block;width:100%;margin-top:6px"></label><label>Trigger distance (metres)<input id="gpsReminderRadius" type="number" min="5" max="100" step="1" value="10" style="display:block;width:100%;margin-top:6px"></label><small id="gpsReminderCoords"></small><div style="display:flex;gap:6px;flex-wrap:wrap"><button type="button" class="primary" id="gpsReminderSave">Save</button><button type="button" id="gpsReminderDelete">Delete</button><button type="submit">Cancel</button></div></form>';
 document.body.appendChild(dlg);
