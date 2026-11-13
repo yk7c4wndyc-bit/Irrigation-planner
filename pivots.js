@@ -192,12 +192,24 @@ function addUI(){
    p[field]=value?n:null;
   }
   persist();form();
+  let notice=el('pivotSettingsSaved');
+  if(!notice){
+   notice=document.createElement('div');
+   notice.id='pivotSettingsSaved';
+   notice.setAttribute('role','status');
+   notice.style.cssText='background:#20583d;color:#effff4;border:2px solid #91dfaf;border-radius:10px;padding:12px;margin:10px 0;font-weight:750;text-align:center;';
+   el('pivotSave').parentElement.before(notice);
+  }
+  notice.textContent='✓ Settings saved for '+p.name;
+  notice.hidden=false;
+  clearTimeout(window.pivotSavedTimer);
+  window.pivotSavedTimer=setTimeout(()=>{notice.hidden=true;},5000);
  };
  map.on('click',e=>{if(placing)sample(e.latlng);});
  setInterval(()=>{if(el('pivotDialog')?.open)status();draw();},60000);
  form();
 }
-function openDialog(){form();el('pivotDialog').showModal();}
+function openDialog(){form();const notice=el('pivotSettingsSaved');if(notice)notice.hidden=true;el('pivotDialog').showModal();}
 window.irrigationPivots={exportData:()=>structuredClone(data),importData:value=>{if(value&&Array.isArray(value.pivots)&&value.pivots.length===2){data=value;persist();form();}}};
 addUI();
 })();
