@@ -136,17 +136,19 @@ function sample(atPoint){
   p.observations.push({at:now,angle:a,direction:d});
   p.observations=p.observations.slice(-200);
   p.direction=d;
- }else if(mode==='limit1'){p.bounds[0]=angle(p.centre,pt);}
- else if(mode==='limit2'){p.bounds[1]=angle(p.centre,pt);}
+ }else if(mode==='limit1'){p.type='sector';p.bounds[0]=angle(p.centre,pt);}
+ else if(mode==='limit2'){p.type='sector';p.bounds[1]=angle(p.centre,pt);}
  persist();form();
  const names={centre:'Pivot centre',arm:'Pivot arm position',limit1:'First turning limit',limit2:'Second turning limit'};
- const confirmation=document.createElement('p');
- confirmation.style.cssText='font-weight:750;color:#b9f1c9;border:1px solid #528a6a;border-radius:8px;padding:9px;';
- confirmation.textContent='✓ '+names[mode]+' saved at '+(mode.startsWith('limit')?angle(p.centre,pt).toFixed(1)+'°':pt.lat.toFixed(5)+', '+pt.lng.toFixed(5));
- const old=el('pivotSaveConfirmation');if(old)old.remove();
- confirmation.id='pivotSaveConfirmation';
- el('pivotStatus').before(confirmation);
- el('pivotDialog').showModal();
+ const value=mode.startsWith('limit')?angle(p.centre,pt).toFixed(1)+'°':pt.lat.toFixed(5)+', '+pt.lng.toFixed(5);
+ const oldNotice=document.getElementById('pivotMapSavedNotice');if(oldNotice)oldNotice.remove();
+ const notice=document.createElement('div');notice.id='pivotMapSavedNotice';
+ notice.style.cssText='position:absolute;z-index:2200;top:18%;left:50%;transform:translateX(-50%);padding:14px 17px;border-radius:12px;border:2px solid #8af0ad;background:#173e2e;color:#fff;box-shadow:0 4px 20px #000b;font-weight:750;max-width:85%;text-align:center;pointer-events:none';
+ notice.textContent='✓ '+names[mode]+' saved: '+value;
+ document.querySelector('.mapwrap').appendChild(notice);
+ setTimeout(()=>notice.remove(),7000);
+ // Keep the map visible so the newly marked turning limit can be inspected.
+
 }
 function addUI(){
  const section=document.createElement('section');
