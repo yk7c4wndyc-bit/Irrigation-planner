@@ -150,6 +150,27 @@ function sample(atPoint){
  // Keep the map visible so the newly marked turning limit can be inspected.
 
 }
+function markCentreGPS(){
+ const p=data.pivots[selected], pivotIndex=selected;
+ if(!navigator.geolocation){alert('GPS is unavailable in this browser.');return;}
+ const button=el('pivotCentreGPS');
+ button.disabled=true;button.textContent='Getting GPS fix…';
+ const reset=()=>{button.disabled=false;button.textContent='Use current GPS for centre';};
+ navigator.geolocation.getCurrentPosition(position=>{
+  reset();
+  const {latitude:lat,longitude:lng,accuracy}=position.coords;
+  if(!Number.isFinite(lat)||!Number.isFinite(lng)){alert('GPS returned an invalid position. Nothing was saved.');return;}
+  const metres=Math.round(accuracy);
+  const warning=accuracy>15?'\nWarning: GPS accuracy is poor. Wait a moment and retry for a better fix.':'';
+  const message='GPS centre reading for '+p.name+':\n'+lat.toFixed(6)+', '+lng.toFixed(6)+'\nEstimated accuracy: ±'+metres+' m.'+warning+'\n\nSave this as the pivot centre?'+(p.centre?'\n\nThis will replace the existing centre and clear the arm observations and turning limits.':'');
+  if(!confirm(message))return;
+  if(selected!==pivotIndex){alert('Pivot selection changed. Please retry.');return;}
+  p.centre={lat,lng};p.tip=null;p.observations=[];p.bounds=[];
+  persist();form();
+  if(map){map.panTo([lat,lng]);draw();}
+  alert('✓ Pivot centre saved using GPS (estimated accuracy ±'+metres+' m).');
+ },error=>{reset();alert('Could not get GPS position: '+error.message+'\nNothing was changed.');},{enableHighAccuracy:true,timeout:20000,maximumAge:0});
+}
 function addUI(){
  const section=document.createElement('section');
  section.innerHTML='<details id="pivotSettings"><summary style="font-weight:700;cursor:pointer;padding:7px 0">🌀 Pivot tracking</summary><p class="small">Mark the fixed centre and arm on the map. Predictions count only scheduled irrigation hours.</p><button id="pivotOpen" type="button">Set up / check pivots</button><button id="pivotMarker" type="button">Hide pivot arms</button></details>';
@@ -163,7 +184,7 @@ function addUI(){
  '<label>Pivot<select id="pivotSelect"><option value="0">Full-circle pivot</option><option value="1">Back-and-forth pivot</option></select></label>'+
  '<label>Pattern<select id="pivotType"><option value="circle">Full circle</option><option value="sector">Back and forth (sector)</option></select></label>'+
  '<label>Common start time<input id="pivotStart" type="time"></label><label>Common stop time<input id="pivotEnd" type="time"></label>'+
- '<div class="bar"><button id="pivotCentre" type="button">Mark centre</button><button id="pivotArm" type="button">Mark arm now</button><button id="pivotLimit1" type="button">Mark first limit</button><button id="pivotLimit2" type="button">Mark second limit</button></div>'+
+ '<div class="bar"><button id="pivotCentre" type="button">Mark centre on map</button><button id="pivotCentreGPS" type="button">Use current GPS for centre</button><button id="pivotArm" type="button">Mark arm now</button><button id="pivotLimit1" type="button">Mark first limit</button><button id="pivotLimit2" type="button">Mark second limit</button></div>'+
  '<label>Current direction<select id="pivotDirection"><option value="1">Clockwise</option><option value="-1">Anticlockwise</option></select></label>'+
  '<p class="small">For the back-and-forth pivot, enter speeds after checking direction and travel. One day’s positions alone may not reveal when it reversed.</p>'+
  '<label>Clockwise speed (degrees per running hour)<input id="pivotCW" type="number" min="0.01" step="0.01" placeholder="Unknown"></label>'+
@@ -175,6 +196,7 @@ function addUI(){
  el('pivotMarker').onclick=()=>{visible=!visible;form();};
  el('pivotSelect').onchange=()=>{selected=Number(el('pivotSelect').value);form();};
  el('pivotCentre').onclick=()=>pointPlace('centre');
+ el('pivotCentreGPS').onclick=markCentreGPS;
  el('pivotArm').onclick=()=>pointPlace('arm');
  el('pivotLimit1').onclick=()=>pointPlace('limit1');
  el('pivotLimit2').onclick=()=>pointPlace('limit2');
