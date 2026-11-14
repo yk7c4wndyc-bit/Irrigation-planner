@@ -2,12 +2,14 @@
 (()=>{
 'use strict';
 const KEY='irrigation-pivots-v1', DEFAULT={start:'23:00',end:'07:00',pivots:[
- {name:'Full-circle pivot',type:'circle',centre:null,tip:null,bounds:[],observations:[],speedCW:null,speedCCW:null,direction:1,stopped:false},
- {name:'Back-and-forth pivot',type:'sector',centre:null,tip:null,bounds:[],observations:[],speedCW:null,speedCCW:null,direction:1,stopped:false}
+ {name:'Full-circle pivot',type:'circle',centre:{lat:-40.98649924075225,lng:145.5290366496638},tip:null,bounds:[],observations:[],speedCW:null,speedCCW:null,direction:1,stopped:false},
+ {name:'Back-and-forth pivot',type:'sector',centre:{lat:-40.98196593842062,lng:145.5324355807702},tip:null,bounds:[],observations:[],speedCW:null,speedCCW:null,direction:1,stopped:false}
 ]};
 let data;try{data=JSON.parse(localStorage.getItem(KEY))}catch(e){}
-if(!data||!Array.isArray(data.pivots)||data.pivots.length!==2)data=DEFAULT;
+if(!data||!Array.isArray(data.pivots)||data.pivots.length!==2)data=structuredClone(DEFAULT);
 data.pivots.forEach((p,i)=>{p.name||=DEFAULT.pivots[i].name;p.type||=DEFAULT.pivots[i].type;p.bounds||=[];p.observations||=[];p.direction||=1;});
+// Fill missing centres from the confirmed 14 Nov export; preserve device edits.
+data.pivots.forEach((p,i)=>{if(!p.centre)p.centre=structuredClone(DEFAULT.pivots[i].centre);});
 let selected=0,placing=null,pivotLayer=null,visible=true,refresh=null;
 const el=id=>document.getElementById(id),norm=x=>((x%360)+360)%360;
 const angle=(a,b)=>norm(Math.atan2((b.lng-a.lng)*Math.cos(a.lat*Math.PI/180),b.lat-a.lat)*180/Math.PI);
@@ -96,12 +98,15 @@ function form(){
  el('pivotSelect').value=String(selected);
  el('pivotStart').value=data.start;el('pivotEnd').value=data.end;
  el('pivotType').value=data.pivots[selected].type;
+ const needsLimits=data.pivots[selected].type==='sector';
+ el('pivotLimit1').hidden=!needsLimits;el('pivotLimit2').hidden=!needsLimits;
  el('pivotDirection').value=String(data.pivots[selected].direction||1);
  el('pivotCW').value=data.pivots[selected].speedCW??'';
  el('pivotCCW').value=data.pivots[selected].speedCCW??'';
  status();draw();
 }
 function pointPlace(mode){
+ if(mode.startsWith('limit')&&data.pivots[selected].type!=='sector')return;
  if(!map){alert('Map is unavailable');return;}
  placing=mode;
  el('pivotStatus').textContent='Tap the location on the map to mark '+mode+'.';
@@ -194,6 +199,7 @@ function addUI(){
  document.body.appendChild(dlg);
  el('pivotOpen').onclick=openDialog;
  el('pivotMarker').onclick=()=>{visible=!visible;form();};
+ el('pivotType').onchange=()=>{const needsLimits=el('pivotType').value==='sector';el('pivotLimit1').hidden=!needsLimits;el('pivotLimit2').hidden=!needsLimits;};
  el('pivotSelect').onchange=()=>{selected=Number(el('pivotSelect').value);form();};
  el('pivotCentre').onclick=()=>pointPlace('centre');
  el('pivotCentreGPS').onclick=markCentreGPS;
