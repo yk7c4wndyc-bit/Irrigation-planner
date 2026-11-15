@@ -15,7 +15,14 @@ const el=id=>document.getElementById(id),norm=x=>((x%360)+360)%360;
 const angle=(a,b)=>norm(Math.atan2((b.lng-a.lng)*Math.cos(a.lat*Math.PI/180),b.lat-a.lat)*180/Math.PI);
 const cw=(a,b)=>norm(b-a),ccw=(a,b)=>norm(a-b);
 const between=(a,b,dir)=>dir===1?cw(a,b):ccw(a,b);
-function persist(){try{localStorage.setItem(KEY,JSON.stringify(data));}catch(e){alert('Could not save pivots in this browser. Export a backup.');}}
+function persist(){
+ try{
+  const saved=JSON.stringify(data);
+  localStorage.setItem(KEY,saved);
+  if(localStorage.getItem(KEY)!==saved)throw Error('Saved data could not be verified');
+  return true;
+ }catch(e){alert('Could not save pivot data: '+e.message+'. Export a backup.');return false;}
+}
 function mins(t){const [h,m]=t.split(':').map(Number);return h*60+m;}
 function runHours(t0,t1){
  let result=0,start=mins(data.start),end=mins(data.end);
@@ -87,7 +94,7 @@ function draw(){
 }
 function status(){
  const p=data.pivots[selected],last=p.observations.at(-1),pred=simulate(p,Date.now());
- const deg=pred?pred.angle.toFixed(1)+'°':'Not calibrated';
+ const deg=pred?pred.angle.toFixed(1)+'°':(p.tip?'Marked (awaiting calibration)':'Not marked');
  const speeds='Clockwise: '+(p.speedCW?.toFixed(2)??'—')+'°/running hr · Anticlockwise: '+(p.speedCCW?.toFixed(2)??'—')+'°/running hr';
  const limitInfo=p.type==='sector'?'\nFirst turning limit: '+(Number.isFinite(p.bounds[0])?p.bounds[0].toFixed(1)+'° saved':'not marked')+'\nSecond turning limit: '+(Number.isFinite(p.bounds[1])?p.bounds[1].toFixed(1)+'° saved':'not marked'):'';
  el('pivotStatus').textContent='Estimated angle: '+deg+(pred?.uncalibrated?' (speed unknown)':'')+'\n'+speeds+'\nLast observed: '+(last?new Date(last.at).toLocaleString():'never')+limitInfo+(p.stopped?'\nPAUSED due to fault':'');
@@ -111,6 +118,7 @@ function pointPlace(mode){
  placing=mode;
  el('pivotStatus').textContent='Tap the location on the map to mark '+mode+'.';
  el('pivotDialog').close();
+ alert('Now tap the map at the end of the pivot arm. Nothing has been saved yet.');
 }
 function sample(atPoint){
  if(!placing)return;
@@ -143,7 +151,7 @@ function sample(atPoint){
   p.direction=d;
  }else if(mode==='limit1'){p.type='sector';p.bounds[0]=angle(p.centre,pt);}
  else if(mode==='limit2'){p.type='sector';p.bounds[1]=angle(p.centre,pt);}
- persist();form();
+ if(!persist()){form();return;}form();
  const names={centre:'Pivot centre',arm:'Pivot arm position',limit1:'First turning limit',limit2:'Second turning limit'};
  const value=mode.startsWith('limit')?angle(p.centre,pt).toFixed(1)+'°':pt.lat.toFixed(5)+', '+pt.lng.toFixed(5);
  const oldNotice=document.getElementById('pivotMapSavedNotice');if(oldNotice)oldNotice.remove();
@@ -154,6 +162,24 @@ function sample(atPoint){
  setTimeout(()=>notice.remove(),7000);
  // Keep the map visible so the newly marked turning limit can be inspected.
 
+}
+function markArmGPS(){
+ const pivotIndex=selected,p=data.pivots[pivotIndex];
+ if(!p.centre){alert('Mark the fixed pivot centre first.');return;}
+ if(!navigator.geolocation){alert('GPS unavailable in this browser.');return;}
+ const button=el('pivotArmGPS');
+ button.disabled=true;button.textContent='Getting GPS fix…';
+ const reset=()=>{button.disabled=false;button.textContent='Mark arm using GPS';};
+ navigator.geolocation.getCurrentPosition(position=>{
+  reset();
+  const {latitude:lat,longitude:lng,accuracy}=position.coords;
+  if(!Number.isFinite(lat)||!Number.isFinite(lng)){alert('GPS returned an invalid position. Nothing saved.');return;}
+  if(selected!==pivotIndex){alert('Pivot selection changed. Retry.');return;}
+  if(!confirm('Mark the arm of '+p.name+' at your current GPS location?\\nAccuracy: ±'+Math.round(accuracy)+' m'+(accuracy>15?' (poor; retry outdoors for better accuracy)':'')+'\\n\\nA dated observation will be saved.'))return;
+  placing='arm';
+  sample({lat,lng});
+ },error=>{reset();alert('Could not get GPS location: '+error.message+'. Nothing saved.');},
+ {enableHighAccuracy:true,timeout:20000,maximumAge:0});
 }
 function markCentreGPS(){
  const p=data.pivots[selected], pivotIndex=selected;
@@ -189,7 +215,7 @@ function addUI(){
  '<label>Pivot<select id="pivotSelect"><option value="0">Full-circle pivot</option><option value="1">Back-and-forth pivot</option></select></label>'+
  '<label>Pattern<select id="pivotType"><option value="circle">Full circle</option><option value="sector">Back and forth (sector)</option></select></label>'+
  '<label>Common start time<input id="pivotStart" type="time"></label><label>Common stop time<input id="pivotEnd" type="time"></label>'+
- '<div class="bar"><button id="pivotCentre" type="button">Mark centre on map</button><button id="pivotCentreGPS" type="button">Use current GPS for centre</button><button id="pivotArm" type="button">Mark arm now</button><button id="pivotLimit1" type="button">Mark first limit</button><button id="pivotLimit2" type="button">Mark second limit</button></div>'+
+ '<div class="bar"><button id="pivotCentre" type="button">Mark centre on map</button><button id="pivotCentreGPS" type="button">Use current GPS for centre</button><button id="pivotArm" type="button">Mark arm on map</button><button id="pivotArmGPS" type="button">Mark arm using GPS</button><button id="pivotLimit1" type="button">Mark first limit</button><button id="pivotLimit2" type="button">Mark second limit</button></div>'+
  '<label>Current direction<select id="pivotDirection"><option value="1">Clockwise</option><option value="-1">Anticlockwise</option></select></label>'+
  '<p class="small">For the back-and-forth pivot, enter speeds after checking direction and travel. One day’s positions alone may not reveal when it reversed.</p>'+
  '<label>Clockwise speed (degrees per running hour)<input id="pivotCW" type="number" min="0.01" step="0.01" placeholder="Unknown"></label>'+
@@ -204,6 +230,7 @@ function addUI(){
  el('pivotCentre').onclick=()=>pointPlace('centre');
  el('pivotCentreGPS').onclick=markCentreGPS;
  el('pivotArm').onclick=()=>pointPlace('arm');
+ el('pivotArmGPS').onclick=markArmGPS;
  el('pivotLimit1').onclick=()=>pointPlace('limit1');
  el('pivotLimit2').onclick=()=>pointPlace('limit2');
  el('pivotClose').onclick=()=>dlg.close();
