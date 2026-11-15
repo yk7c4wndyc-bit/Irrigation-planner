@@ -15,7 +15,7 @@ const el=id=>document.getElementById(id),norm=x=>((x%360)+360)%360;
 const angle=(a,b)=>norm(Math.atan2((b.lng-a.lng)*Math.cos(a.lat*Math.PI/180),b.lat-a.lat)*180/Math.PI);
 const cw=(a,b)=>norm(b-a),ccw=(a,b)=>norm(a-b);
 const between=(a,b,dir)=>dir===1?cw(a,b):ccw(a,b);
-function persist(){try{localStorage.setItem(KEY,JSON.stringify(data));}catch(e){alert('Could not save pivots in this browser. Export a backup.');}}
+function persist(){try{localStorage.setItem(KEY,JSON.stringify(data));return true;}catch(e){alert('Could not save pivots in this browser. Nothing was saved.');return false;}}
 function mins(t){const [h,m]=t.split(':').map(Number);return h*60+m;}
 function runHours(t0,t1){
  let result=0,start=mins(data.start),end=mins(data.end);
@@ -109,11 +109,13 @@ function pointPlace(mode){
  if(mode.startsWith('limit')&&data.pivots[selected].type!=='sector')return;
  if(!map){alert('Map is unavailable');return;}
  placing=mode;
+ alert('Tap the '+(mode==='arm'?'outer end of the pivot arm':mode==='centre'?'fixed pivot centre':'turning limit')+' on the map to save its position.');
  el('pivotStatus').textContent='Tap the location on the map to mark '+mode+'.';
  el('pivotDialog').close();
 }
 function sample(atPoint){
  if(!placing)return;
+ const before=structuredClone(data);
  const p=data.pivots[selected],pt={lat:atPoint.lat,lng:atPoint.lng},mode=placing;
  placing=null;
  if(mode==='centre'){p.centre=pt;p.tip=null;p.observations=[];p.bounds=[];}
@@ -143,7 +145,8 @@ function sample(atPoint){
   p.direction=d;
  }else if(mode==='limit1'){p.type='sector';p.bounds[0]=angle(p.centre,pt);}
  else if(mode==='limit2'){p.type='sector';p.bounds[1]=angle(p.centre,pt);}
- persist();form();
+ if(!persist()){data=before;form();return false;}
+ visible=true;form();
  const names={centre:'Pivot centre',arm:'Pivot arm position',limit1:'First turning limit',limit2:'Second turning limit'};
  const value=mode.startsWith('limit')?angle(p.centre,pt).toFixed(1)+'°':pt.lat.toFixed(5)+', '+pt.lng.toFixed(5);
  const oldNotice=document.getElementById('pivotMapSavedNotice');if(oldNotice)oldNotice.remove();
@@ -152,8 +155,35 @@ function sample(atPoint){
  notice.textContent='✓ '+names[mode]+' saved: '+value;
  document.querySelector('.mapwrap').appendChild(notice);
  setTimeout(()=>notice.remove(),7000);
+ return true;
  // Keep the map visible so the newly marked turning limit can be inspected.
 
+}
+function markArmGPS(){
+ const pivotIndex=selected,p=data.pivots[pivotIndex];
+ if(!p.centre){alert('Mark the fixed centre first.');return;}
+ if(!navigator.geolocation){alert('GPS is unavailable in this browser. Nothing was saved.');return;}
+ placing=null;
+ const button=el('pivotArmGPS');
+ button.disabled=true;button.textContent='Getting GPS fix…';
+ const reset=()=>{button.disabled=false;button.textContent='Mark arm at my GPS location';};
+ navigator.geolocation.getCurrentPosition(position=>{
+  reset();
+  if(selected!==pivotIndex||data.pivots[pivotIndex]!==p){alert('Pivot selection changed. Nothing was saved. Please retry.');return;}
+  const {latitude:lat,longitude:lng,accuracy}=position.coords;
+  if(!Number.isFinite(lat)||!Number.isFinite(lng)||!Number.isFinite(accuracy)){alert('GPS returned an invalid position. Nothing was saved.');return;}
+  const metres=Math.round(accuracy);
+  if(!confirm('Save your current GPS location as the outer end of '+p.name+'?'+
+   '\nStand at the outer end of the arm, not the centre.'+
+   '\nEstimated GPS accuracy: ±'+metres+' m.'+
+   (accuracy>15?'\nGPS accuracy is poor. Cancel and retry for a better fix.':'')))return;
+  placing='arm';
+  if(sample({lat,lng})){
+   el('pivotDialog').close();
+   alert('✓ Arm position saved for '+p.name+' at '+new Date().toLocaleTimeString()+'. GPS accuracy ±'+metres+' m.');
+  }
+ },error=>{reset();alert('Could not get GPS position: '+error.message+'\nNothing was saved.');},
+ {enableHighAccuracy:true,timeout:20000,maximumAge:0});
 }
 function markCentreGPS(){
  const p=data.pivots[selected], pivotIndex=selected;
@@ -178,18 +208,18 @@ function markCentreGPS(){
 }
 function addUI(){
  const section=document.createElement('section');
- section.innerHTML='<details id="pivotSettings"><summary style="font-weight:700;cursor:pointer;padding:7px 0">🌀 Pivot tracking</summary><p class="small">Mark the fixed centre and arm on the map. Predictions count only scheduled irrigation hours.</p><button id="pivotOpen" type="button">Set up / check pivots</button><button id="pivotMarker" type="button">Hide pivot arms</button></details>';
+ section.innerHTML='<details id="pivotSettings"><summary style="font-weight:700;cursor:pointer;padding:7px 0">🌀 Pivot tracking</summary><p class="small">Mark the centre and arm on the map or use GPS while standing at the position. Predictions count only scheduled irrigation hours.</p><button id="pivotOpen" type="button">Set up / check pivots</button><button id="pivotMarker" type="button">Hide pivot arms</button></details>';
  const planning=el('planningSettings');
  if(planning)planning.insertAdjacentElement('afterend',section);
  else document.querySelector('aside')?.appendChild(section);
  const quickButton=el('quickOpenPivots');
  if(quickButton)quickButton.onclick=()=>{el('quickPlanningDialog').close();openDialog();};
  const dlg=document.createElement('dialog');dlg.id='pivotDialog';dlg.style.cssText='width:min(430px,95vw);max-height:90dvh;overflow:auto;background:#152c27;color:white;border:2px solid #91bea6;border-radius:14px;padding:16px;z-index:5000';
- dlg.innerHTML='<h3>🌀 Pivot tracking</h3><p class="small">Use your finger on the map when marking positions. Recheck the arm to correct predictions.</p>'+
+ dlg.innerHTML='<h3>🌀 Pivot tracking</h3><p class="small">For GPS arm marking, stand at the outer end of the arm. For map marking, tap its outer end on the map after closing this panel.</p>'+
  '<label>Pivot<select id="pivotSelect"><option value="0">Full-circle pivot</option><option value="1">Back-and-forth pivot</option></select></label>'+
  '<label>Pattern<select id="pivotType"><option value="circle">Full circle</option><option value="sector">Back and forth (sector)</option></select></label>'+
  '<label>Common start time<input id="pivotStart" type="time"></label><label>Common stop time<input id="pivotEnd" type="time"></label>'+
- '<div class="bar"><button id="pivotCentre" type="button">Mark centre on map</button><button id="pivotCentreGPS" type="button">Use current GPS for centre</button><button id="pivotArm" type="button">Mark arm now</button><button id="pivotLimit1" type="button">Mark first limit</button><button id="pivotLimit2" type="button">Mark second limit</button></div>'+
+ '<div class="bar"><button id="pivotCentre" type="button">Mark centre on map</button><button id="pivotCentreGPS" type="button">Use current GPS for centre</button><button id="pivotArmGPS" type="button">Mark arm at my GPS location</button><button id="pivotArm" type="button">Mark arm on map</button><button id="pivotLimit1" type="button">Mark first limit</button><button id="pivotLimit2" type="button">Mark second limit</button></div>'+
  '<label>Current direction<select id="pivotDirection"><option value="1">Clockwise</option><option value="-1">Anticlockwise</option></select></label>'+
  '<p class="small">For the back-and-forth pivot, enter speeds after checking direction and travel. One day’s positions alone may not reveal when it reversed.</p>'+
  '<label>Clockwise speed (degrees per running hour)<input id="pivotCW" type="number" min="0.01" step="0.01" placeholder="Unknown"></label>'+
@@ -203,6 +233,7 @@ function addUI(){
  el('pivotSelect').onchange=()=>{selected=Number(el('pivotSelect').value);form();};
  el('pivotCentre').onclick=()=>pointPlace('centre');
  el('pivotCentreGPS').onclick=markCentreGPS;
+ el('pivotArmGPS').onclick=markArmGPS;
  el('pivotArm').onclick=()=>pointPlace('arm');
  el('pivotLimit1').onclick=()=>pointPlace('limit1');
  el('pivotLimit2').onclick=()=>pointPlace('limit2');
