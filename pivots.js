@@ -75,6 +75,26 @@ function draw(){
   const prediction=simulate(p,now);
   const tip=p.tip,observed=prediction?.angle??(tip?angle(p.centre,tip):null);
   const length=tip?map.distance(centre,[tip.lat,tip.lng]):90;
+  // Draw only measured footprints: never invent the radius or turning limits.
+  if(tip&&Number.isFinite(length)&&length>1){
+   if(p.type==='circle'){
+    L.circle(centre,{radius:length,color:'#75edfc',weight:2,opacity:0.85,fillColor:'#75edfc',fillOpacity:0.07,interactive:false})
+     .addTo(pivotLayer);
+   }else if(p.type==='sector'&&p.bounds?.length===2&&p.bounds.every(Number.isFinite)){
+    const span=cw(p.bounds[0],p.bounds[1]);
+    if(span>0&&span<360){
+     const arc=[];
+     const steps=Math.max(24,Math.ceil(span/3));
+     for(let j=0;j<=steps;j++){
+      const theta=(p.bounds[0]+span*j/steps)*Math.PI/180;
+      arc.push([p.centre.lat+length*Math.cos(theta)/111320,
+       p.centre.lng+length*Math.sin(theta)/(111320*Math.cos(p.centre.lat*Math.PI/180))]);
+     }
+     L.polygon([centre,...arc],{color:'#e6a0ff',weight:2,opacity:0.85,fillColor:'#e6a0ff',fillOpacity:0.07,interactive:false})
+      .addTo(pivotLayer);
+    }
+   }
+  }
   if(p.type==='sector'&&p.bounds?.length){
     p.bounds.forEach((bearing,index)=>{
       if(!Number.isFinite(bearing))return;
@@ -97,7 +117,7 @@ function status(){
  const deg=pred?pred.angle.toFixed(1)+'°':(p.tip?'Marked (awaiting calibration)':'Not marked');
  const speeds='Clockwise: '+(p.speedCW?.toFixed(2)??'—')+'°/running hr · Anticlockwise: '+(p.speedCCW?.toFixed(2)??'—')+'°/running hr';
  const limitInfo=p.type==='sector'?'\nFirst turning limit: '+(Number.isFinite(p.bounds[0])?p.bounds[0].toFixed(1)+'° saved':'not marked')+'\nSecond turning limit: '+(Number.isFinite(p.bounds[1])?p.bounds[1].toFixed(1)+'° saved':'not marked'):'';
- el('pivotStatus').textContent='Estimated angle: '+deg+(pred?.uncalibrated?' (speed unknown)':'')+'\n'+speeds+'\nLast observed: '+(last?new Date(last.at).toLocaleString():'never')+limitInfo+(p.stopped?'\nPAUSED due to fault':'');
+ el('pivotStatus').textContent='Footprint radius: '+(p.tip&&p.centre?Math.round(map.distance([p.centre.lat,p.centre.lng],[p.tip.lat,p.tip.lng]))+' m':'not measured')+'\n'+(p.type==='sector'&&p.bounds.length!==2?'Sector outline needs both turning limits\n':'')+'Estimated angle: '+deg+(pred?.uncalibrated?' (speed unknown)':'')+'\n'+speeds+'\nLast observed: '+(last?new Date(last.at).toLocaleString():'never')+limitInfo+(p.stopped?'\nPAUSED due to fault':'');
  el('pivotStop').textContent=p.stopped?'Resume pivot':'Pause faulty pivot';
  el('pivotMarker').textContent=visible?'Hide pivot arms':'Show pivot arms';
 }
