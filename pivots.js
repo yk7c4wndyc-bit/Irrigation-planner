@@ -7,7 +7,7 @@ const KEY='irrigation-pivots-v1', DEFAULT={start:'23:00',end:'07:00',pivots:[
 ]};
 let data;try{data=JSON.parse(localStorage.getItem(KEY))}catch(e){}
 if(!data||!Array.isArray(data.pivots)||data.pivots.length!==2)data=structuredClone(DEFAULT);
-data.pivots.forEach((p,i)=>{p.name||=DEFAULT.pivots[i].name;p.type||=DEFAULT.pivots[i].type;p.bounds||=[];p.observations||=[];p.direction||=1;});
+data.pivots.forEach((p,i)=>{p.name||=DEFAULT.pivots[i].name;p.type||=DEFAULT.pivots[i].type;p.bounds||=[];p.observations||=[];p.direction||=1;if(!(p.sprayRadiusMetres>0))p.sprayRadiusMetres=null;});
 // Fill missing centres from the confirmed 14 Nov export; preserve device edits.
 data.pivots.forEach((p,i)=>{if(!p.centre)p.centre=structuredClone(DEFAULT.pivots[i].centre);});
 let selected=0,placing=null,pivotLayer=null,visible=true,refresh=null;
@@ -56,6 +56,14 @@ function simulate(p,when){
  }
  return {angle:norm(a0+pos),direction:d,uncalibrated:tries>=2000};
 }
+function sprayPoint(c,b,r){const t=b*Math.PI/180,lat=c.lat*Math.PI/180,d=r/6371000,la=Math.asin(Math.sin(lat)*Math.cos(d)+Math.cos(lat)*Math.sin(d)*Math.cos(t)),lo=c.lng*Math.PI/180+Math.atan2(Math.sin(t)*Math.sin(d)*Math.cos(lat),Math.cos(d)-Math.sin(lat)*Math.sin(la));return [la*180/Math.PI,lo*180/Math.PI];}
+function coveragePoints(p,r){
+ if(!(r>0))return null;
+ if(p.type==='circle')return Array.from({length:121},(_,i)=>sprayPoint(p.centre,i*3,r));
+ if(p.bounds.length!==2||!p.bounds.every(Number.isFinite))return null;
+ const span=cw(p.bounds[0],p.bounds[1]);if(span<10||span>350)return null;
+ const steps=Math.ceil(span/3);return [[p.centre.lat,p.centre.lng],...Array.from({length:steps+1},(_,i)=>sprayPoint(p.centre,p.bounds[0]+span*i/steps,r))];
+}
 function draw(){
  if(typeof map==='undefined'||!map||typeof L==='undefined')return;
  if(!pivotLayer)pivotLayer=L.layerGroup().addTo(map);
@@ -68,6 +76,8 @@ function draw(){
   const prediction=simulate(p,now);
   const tip=p.tip,observed=prediction?.angle??(tip?angle(p.centre,tip):null);
   const length=tip?map.distance(centre,[tip.lat,tip.lng]):90;
+  const radius=p.sprayRadiusMetres||(tip?length:null),outline=coveragePoints(p,radius);
+  if(outline)L.polygon(outline,{color:'#37b7ff',weight:3,fillColor:'#2389ce',fillOpacity:0.10,dashArray:p.sprayRadiusMetres?null:'7 6'}).addTo(pivotLayer).bindTooltip(p.name+' coverage — '+(p.sprayRadiusMetres?'outer spray limit':'estimated from arm')+' ('+Math.round(radius)+' m)');
   if(p.type==='sector'&&p.bounds?.length){
     p.bounds.forEach((bearing,index)=>{
       if(!Number.isFinite(bearing))return;
@@ -89,8 +99,9 @@ function status(){
  const p=data.pivots[selected],last=p.observations.at(-1),pred=simulate(p,Date.now());
  const deg=pred?pred.angle.toFixed(1)+'°':'Not calibrated';
  const speeds='Clockwise: '+(p.speedCW?.toFixed(2)??'—')+'°/running hr · Anticlockwise: '+(p.speedCCW?.toFixed(2)??'—')+'°/running hr';
+ const sprayInfo='\nOuter spray limit: '+(p.sprayRadiusMetres?Math.round(p.sprayRadiusMetres)+' m saved':'not marked');
  const limitInfo=p.type==='sector'?'\nFirst turning limit: '+(Number.isFinite(p.bounds[0])?p.bounds[0].toFixed(1)+'° saved':'not marked')+'\nSecond turning limit: '+(Number.isFinite(p.bounds[1])?p.bounds[1].toFixed(1)+'° saved':'not marked'):'';
- el('pivotStatus').textContent='Estimated angle: '+deg+(pred?.uncalibrated?' (speed unknown)':'')+'\n'+speeds+'\nLast observed: '+(last?new Date(last.at).toLocaleString():'never')+limitInfo+(p.stopped?'\nPAUSED due to fault':'');
+ el('pivotStatus').textContent='Estimated angle: '+deg+(pred?.uncalibrated?' (speed unknown)':'')+'\n'+speeds+'\nLast observed: '+(last?new Date(last.at).toLocaleString():'never')+limitInfo+sprayInfo+(p.stopped?'\nPAUSED due to fault':'');
  el('pivotStop').textContent=p.stopped?'Resume pivot':'Pause faulty pivot';
  el('pivotMarker').textContent=visible?'Hide pivot arms':'Show pivot arms';
 }
@@ -109,7 +120,7 @@ function pointPlace(mode){
  if(mode.startsWith('limit')&&data.pivots[selected].type!=='sector')return;
  if(!map){alert('Map is unavailable');return;}
  placing=mode;
- alert('Tap the '+(mode==='arm'?'outer end of the pivot arm':mode==='centre'?'fixed pivot centre':'turning limit')+' on the map to save its position.');
+ alert('Tap the '+(mode==='arm'?'outer end of the pivot arm':mode==='centre'?'fixed pivot centre':mode==='spray'?'outermost reach of the spray':'turning limit')+' on the map to save its position.');
  el('pivotStatus').textContent='Tap the location on the map to mark '+mode+'.';
  el('pivotDialog').close();
 }
@@ -118,7 +129,7 @@ function sample(atPoint){
  const before=structuredClone(data);
  const p=data.pivots[selected],pt={lat:atPoint.lat,lng:atPoint.lng},mode=placing;
  placing=null;
- if(mode==='centre'){p.centre=pt;p.tip=null;p.observations=[];p.bounds=[];}
+ if(mode==='centre'){p.centre=pt;p.tip=null;p.observations=[];p.bounds=[];p.sprayRadiusMetres=null;}
  else if(!p.centre){alert('Mark the fixed centre first.');form();return;}
  else if(mode==='arm'){
   p.tip=pt;const a=angle(p.centre,pt),now=Date.now();
@@ -143,12 +154,13 @@ function sample(atPoint){
   p.observations.push({at:now,angle:a,direction:d});
   p.observations=p.observations.slice(-200);
   p.direction=d;
- }else if(mode==='limit1'){p.type='sector';p.bounds[0]=angle(p.centre,pt);}
+ }else if(mode==='spray'){const d=map.distance([p.centre.lat,p.centre.lng],[pt.lat,pt.lng]);if(d<5||d>2500){alert('Spray limit must be 5–2500 m from the pivot centre. Nothing saved.');form();return false;}p.sprayRadiusMetres=d;}
+ else if(mode==='limit1'){p.type='sector';p.bounds[0]=angle(p.centre,pt);}
  else if(mode==='limit2'){p.type='sector';p.bounds[1]=angle(p.centre,pt);}
  if(!persist()){data=before;form();return false;}
  visible=true;form();
- const names={centre:'Pivot centre',arm:'Pivot arm position',limit1:'First turning limit',limit2:'Second turning limit'};
- const value=mode.startsWith('limit')?angle(p.centre,pt).toFixed(1)+'°':pt.lat.toFixed(5)+', '+pt.lng.toFixed(5);
+ const names={centre:'Pivot centre',arm:'Pivot arm position',limit1:'First turning limit',limit2:'Second turning limit',spray:'Outer spray limit'};
+ const value=mode==='spray'?Math.round(p.sprayRadiusMetres)+' m from centre':mode.startsWith('limit')?angle(p.centre,pt).toFixed(1)+'°':pt.lat.toFixed(5)+', '+pt.lng.toFixed(5);
  const oldNotice=document.getElementById('pivotMapSavedNotice');if(oldNotice)oldNotice.remove();
  const notice=document.createElement('div');notice.id='pivotMapSavedNotice';
  notice.style.cssText='position:absolute;z-index:2200;top:18%;left:50%;transform:translateX(-50%);padding:14px 17px;border-radius:12px;border:2px solid #8af0ad;background:#173e2e;color:#fff;box-shadow:0 4px 20px #000b;font-weight:750;max-width:85%;text-align:center;pointer-events:none';
@@ -158,6 +170,21 @@ function sample(atPoint){
  return true;
  // Keep the map visible so the newly marked turning limit can be inspected.
 
+}
+function markSprayGPS(){
+ const i=selected,p=data.pivots[i];if(!p.centre){alert('Mark centre first.');return;}
+ if(!navigator.geolocation){alert('GPS unavailable. Nothing saved.');return;}
+ const button=el('pivotSprayGPS');button.disabled=true;button.textContent='Getting GPS fix…';
+ const reset=()=>{button.disabled=false;button.textContent='Use GPS for outer spray limit';};
+ navigator.geolocation.getCurrentPosition(pos=>{
+  reset();if(selected!==i){alert('Pivot selection changed. Nothing saved.');return;}
+  const {latitude:lat,longitude:lng,accuracy}=pos.coords;
+  if(!Number.isFinite(lat)||!Number.isFinite(lng)||!Number.isFinite(accuracy)){alert('Invalid GPS. Nothing saved.');return;}
+  const r=map.distance([p.centre.lat,p.centre.lng],[lat,lng]);
+  if(r<5||r>2500){alert('Outside 5–2500 m range. Nothing saved.');return;}
+  if(!confirm('Save outer spray reach '+Math.round(r)+' m for '+p.name+'?\nStand at the furthest reach of water, not at the metal arm end.\nGPS accuracy ±'+Math.round(accuracy)+' m.'))return;
+  placing='spray';if(sample({lat,lng})){el('pivotDialog').close();alert('✓ Outer spray limit saved: '+Math.round(r)+' m');}
+ },e=>{reset();alert('GPS failed: '+e.message+'\nNothing saved.');},{enableHighAccuracy:true,timeout:20000,maximumAge:0});
 }
 function markArmGPS(){
  const pivotIndex=selected,p=data.pivots[pivotIndex];
@@ -200,7 +227,7 @@ function markCentreGPS(){
   const message='GPS centre reading for '+p.name+':\n'+lat.toFixed(6)+', '+lng.toFixed(6)+'\nEstimated accuracy: ±'+metres+' m.'+warning+'\n\nSave this as the pivot centre?'+(p.centre?'\n\nThis will replace the existing centre and clear the arm observations and turning limits.':'');
   if(!confirm(message))return;
   if(selected!==pivotIndex){alert('Pivot selection changed. Please retry.');return;}
-  p.centre={lat,lng};p.tip=null;p.observations=[];p.bounds=[];
+  p.centre={lat,lng};p.tip=null;p.observations=[];p.bounds=[];p.sprayRadiusMetres=null;
   persist();form();
   if(map){map.panTo([lat,lng]);draw();}
   alert('✓ Pivot centre saved using GPS (estimated accuracy ±'+metres+' m).');
@@ -219,7 +246,7 @@ function addUI(){
  '<label>Pivot<select id="pivotSelect"><option value="0">Full-circle pivot</option><option value="1">Back-and-forth pivot</option></select></label>'+
  '<label>Pattern<select id="pivotType"><option value="circle">Full circle</option><option value="sector">Back and forth (sector)</option></select></label>'+
  '<label>Common start time<input id="pivotStart" type="time"></label><label>Common stop time<input id="pivotEnd" type="time"></label>'+
- '<div class="bar"><button id="pivotCentre" type="button">Mark centre on map</button><button id="pivotCentreGPS" type="button">Use current GPS for centre</button><button id="pivotArmGPS" type="button">Mark arm at my GPS location</button><button id="pivotArm" type="button">Mark arm on map</button><button id="pivotLimit1" type="button">Mark first limit</button><button id="pivotLimit2" type="button">Mark second limit</button></div>'+
+ '<div class="bar"><button id="pivotCentre" type="button">Mark centre on map</button><button id="pivotCentreGPS" type="button">Use current GPS for centre</button><button id="pivotArmGPS" type="button">Mark arm at my GPS location</button><button id="pivotArm" type="button">Mark arm on map</button><button id="pivotSpray" type="button">Mark outer spray limit on map</button><button id="pivotSprayGPS" type="button">Use GPS for outer spray limit</button><button id="pivotLimit1" type="button">Mark first limit</button><button id="pivotLimit2" type="button">Mark second limit</button></div>'+
  '<label>Current direction<select id="pivotDirection"><option value="1">Clockwise</option><option value="-1">Anticlockwise</option></select></label>'+
  '<p class="small">For the back-and-forth pivot, enter speeds after checking direction and travel. One day’s positions alone may not reveal when it reversed.</p>'+
  '<label>Clockwise speed (degrees per running hour)<input id="pivotCW" type="number" min="0.01" step="0.01" placeholder="Unknown"></label>'+
@@ -235,6 +262,8 @@ function addUI(){
  el('pivotCentreGPS').onclick=markCentreGPS;
  el('pivotArmGPS').onclick=markArmGPS;
  el('pivotArm').onclick=()=>pointPlace('arm');
+ el('pivotSpray').onclick=()=>pointPlace('spray');
+ el('pivotSprayGPS').onclick=markSprayGPS;
  el('pivotLimit1').onclick=()=>pointPlace('limit1');
  el('pivotLimit2').onclick=()=>pointPlace('limit2');
  el('pivotClose').onclick=()=>dlg.close();
