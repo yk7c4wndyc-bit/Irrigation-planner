@@ -299,12 +299,41 @@ function automaticRotationBackup(){
  // the user can explicitly download the latest saved copy to Files when convenient.
  return stored;
 }
+// Weekly Files backup reminder; browser backups still run every rotation.
+const weeklyFilesBackupKey='irrigation-weekly-files-backup-v1';
+function weeklyFilesBackupState(){
+ try{return JSON.parse(localStorage.getItem(weeklyFilesBackupKey)||'{}')||{};}catch(e){return {};}
+}
+function weeklyFilesBackupReminder(){
+ const latest=savedRotationBackups().at(-1);if(!latest)return;
+ const now=Date.now(),week=7*24*60*60*1000,saved=weeklyFilesBackupState();
+ if(saved.lastSaved&&now-saved.lastSaved<week)return;
+ if(saved.lastPrompt&&now-saved.lastPrompt<24*60*60*1000)return;
+ const reminder=document.createElement('dialog');
+ reminder.id='weeklyFilesBackupDialog';
+ reminder.style.cssText='width:min(92vw,470px);border:3px solid #f5c05b;border-radius:18px;background:#132e2a;color:white;padding:22px;box-shadow:0 8px 50px #000c';
+ reminder.innerHTML='<h2 style="font-size:27px;margin:0 0 12px">📁 Weekly irrigation backup</h2><p style="font-size:18px;color:white">Your rotation is already backed up automatically in Safari. Please save a separate copy to your iPhone Files or iCloud Drive this week.</p><div style="display:flex;gap:10px;flex-wrap:wrap"><button type="button" class="primary" id="weeklyFilesSave">Save backup to Files</button><button type="button" id="weeklyFilesLater">Remind me tomorrow</button></div>';
+ document.body.appendChild(reminder);
+ const mark=patch=>{try{localStorage.setItem(weeklyFilesBackupKey,JSON.stringify({...weeklyFilesBackupState(),...patch}));}catch(e){}};
+ const close=()=>{reminder.close();reminder.remove();};
+ reminder.querySelector('#weeklyFilesSave').onclick=()=>{
+  const entry=savedRotationBackups().at(-1);if(entry)download(entry.name,entry.backup);
+  // A download request is not proof the user saved the file in Files.
+  const yes=confirm('Did you finish saving the downloaded backup in Files or iCloud Drive? Select OK only after saving it.');
+  mark(yes?{lastSaved:Date.now(),lastPrompt:Date.now()}:{lastPrompt:Date.now()});
+  close();
+ };
+ reminder.querySelector('#weeklyFilesLater').onclick=()=>{mark({lastPrompt:Date.now()});close();};
+ reminder.addEventListener('cancel',()=>mark({lastPrompt:Date.now()}),{once:true});
+ reminder.showModal();
+}
 function announceRotationComplete(){
  dropButtonLatchedFor=null;$('dropNow').hidden=true;
  const saved=automaticRotationBackup();
  const dialog=$('rotationCompleteDialog');
  $('rotationBackupNotice').textContent=saved?'Automatic backup saved in this browser. Use “Save latest backup to Files” when you want a separate iPhone Files copy.':'Could not save a browser backup. Use Export progress + routes to download a copy manually.';
  if(!dialog.open)dialog.showModal();
+ if(saved)setTimeout(weeklyFilesBackupReminder,250);
 }
 // Pivot nozzle inspections are triggered by completing lateral 27, never on weekends.
 // Stored independently of shift progress so resetting or importing lateral routes
