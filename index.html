@@ -318,10 +318,10 @@ function weeklyFilesBackupReminder(){
  const close=()=>{reminder.close();reminder.remove();};
  reminder.querySelector('#weeklyFilesSave').onclick=()=>{
   const entry=savedRotationBackups().at(-1);if(entry)download(entry.name,entry.backup);
-  // A download request is not proof the user saved the file in Files.
-  const yes=confirm('Did you finish saving the downloaded backup in Files or iCloud Drive? Select OK only after saving it.');
-  mark(yes?{lastSaved:Date.now(),lastPrompt:Date.now()}:{lastPrompt:Date.now()});
-  close();
+  const saveButton=reminder.querySelector('#weeklyFilesSave');
+  saveButton.textContent='I have saved it in Files';
+  saveButton.onclick=()=>{mark({lastSaved:Date.now(),lastPrompt:Date.now()});close();};
+  reminder.querySelector('p').textContent='After the download, save the JSON file in Files or iCloud Drive. Then tap “I have saved it in Files” to confirm.';
  };
  reminder.querySelector('#weeklyFilesLater').onclick=()=>{mark({lastPrompt:Date.now()});close();};
  reminder.addEventListener('cancel',()=>mark({lastPrompt:Date.now()}),{once:true});
