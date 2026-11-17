@@ -304,10 +304,10 @@ function addUI(){
 
 /* Map-based review is shown after laterals 20 and 27. No stored data are changed
    until the operator explicitly confirms a position. */
-function recordReviewPosition(index,pt,dir){
+function recordReviewPosition(index,pt,dir,recalibrate=true){
  const p=data.pivots[index],before=structuredClone(data),now=Date.now(),a=angle(p.centre,pt);
  const prev=p.observations.at(-1);
- if(prev&&now>prev.at&&p.type==='circle'){
+ if(recalibrate&&prev&&now>prev.at&&p.type==='circle'){
   const hours=runHours(prev.at,now);
   if(hours>0.1){
    const travel=between(prev.angle,a,dir);
@@ -373,7 +373,7 @@ function reviewAfterLateral(n,continueNavigation){
  correct.onclick=()=>{
   if(!prediction||prediction.uncalibrated)return;
   const point=sprayPoint(p.centre,prediction.angle,radius);
-  if(recordReviewPosition(index,{lat:point[0],lng:point[1]},Number(direction.value)))closeReview(true);
+  if(recordReviewPosition(index,{lat:point[0],lng:point[1]},Number(direction.value),false))closeReview(true);
  };
  adjust.onclick=()=>{
   review.adjusting=true;panel.style.top='2%';detail.textContent='Tap the ACTUAL arm tip on the map. You will confirm before saving.';bar.style.display='none';
