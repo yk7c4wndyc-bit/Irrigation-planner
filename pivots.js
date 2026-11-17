@@ -358,9 +358,10 @@ function reviewAfterLateral(n,continueNavigation){
  const bar=document.createElement('div');bar.style.cssText='display:flex;gap:10px;justify-content:center;flex-wrap:wrap';
  const correct=document.createElement('button');correct.textContent='✓ Correct';correct.className='primary';
  correct.disabled=!prediction||!!prediction.uncalibrated;
- const adjust=document.createElement('button');adjust.textContent='Adjust position';
+ const adjust=document.createElement('button');adjust.textContent='Adjust position on map';
+ const gps=document.createElement('button');gps.textContent='📍 Mark arm tip at my GPS';gps.type='button';
  const cancel=document.createElement('button');cancel.textContent='Not now';cancel.style.cssText='font-size:13px';
- bar.append(correct,adjust,cancel);panel.append(heading,detail,direction,bar);
+ bar.append(correct,adjust,gps,cancel);panel.append(heading,detail,direction,bar);
  document.querySelector('.mapwrap').appendChild(panel);
  const onMapClick=e=>{
   if(!review?.adjusting)return;
@@ -375,6 +376,18 @@ function reviewAfterLateral(n,continueNavigation){
   const point=sprayPoint(p.centre,prediction.angle,radius);
   if(recordReviewPosition(index,{lat:point[0],lng:point[1]},Number(direction.value),false))closeReview(true);
  };
+ gps.onclick=()=>{
+  if(!navigator.geolocation){alert('GPS is not available in this browser.');return;}
+  gps.disabled=true;gps.textContent='Getting precise GPS…';
+  navigator.geolocation.getCurrentPosition(pos=>{
+   gps.disabled=false;gps.textContent='📍 Mark arm tip at my GPS';
+   if(!review||review.panel!==panel)return;
+   const pt={lat:pos.coords.latitude,lng:pos.coords.longitude};
+   const metres=Math.round(pos.coords.accuracy||0),bearing=angle(p.centre,pt);
+   if(!confirm('Use GPS position as '+p.name+' arm tip?\\nDirection: '+bearing.toFixed(1)+'°\\nGPS accuracy: ±'+metres+' metres.\\n\\nOnly confirm if you are standing at the OUTER END of the pivot arm.'))return;
+   if(recordReviewPosition(index,pt,Number(direction.value)))closeReview(true);
+  },err=>{gps.disabled=false;gps.textContent='📍 Mark arm tip at my GPS';alert('Could not get GPS: '+err.message);},{enableHighAccuracy:true,timeout:20000,maximumAge:0});
+ };
  adjust.onclick=()=>{
   review.adjusting=true;panel.style.top='2%';detail.textContent='Tap the ACTUAL arm tip on the map. You will confirm before saving.';bar.style.display='none';
   const back=document.createElement('button');back.textContent='Cancel adjustment';back.onclick=()=>{review.adjusting=false;detail.textContent='Choose Correct or Adjust position.';bar.style.display='flex';back.remove();};panel.appendChild(back);
@@ -384,6 +397,6 @@ function reviewAfterLateral(n,continueNavigation){
 }
 
 function openDialog(){form();const notice=el('pivotSettingsSaved');if(notice)notice.hidden=true;el('pivotDialog').showModal();}
-window.irrigationPivots={reviewAfterLateral,exportData:()=>structuredClone(data),importData:value=>{if(value&&Array.isArray(value.pivots)&&value.pivots.length===2){data=value;persist();form();}}};
+window.irrigationPivots={reviewAfterLateral,isReviewing:()=>!!review,exportData:()=>structuredClone(data),importData:value=>{if(value&&Array.isArray(value.pivots)&&value.pivots.length===2){data=value;persist();form();}}};
 addUI();
 })();
