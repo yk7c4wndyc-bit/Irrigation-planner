@@ -10,7 +10,7 @@ if(!data||!Array.isArray(data.pivots)||data.pivots.length!==2)data=structuredClo
 data.pivots.forEach((p,i)=>{p.name||=DEFAULT.pivots[i].name;p.type||=DEFAULT.pivots[i].type;p.bounds||=[];p.observations||=[];p.direction||=1;if(!(p.sprayRadiusMetres>0))p.sprayRadiusMetres=null;});
 // Fill missing centres from the confirmed 14 Nov export; preserve device edits.
 data.pivots.forEach((p,i)=>{if(!p.centre)p.centre=structuredClone(DEFAULT.pivots[i].centre);});
-let selected=0,placing=null,pivotLayer=null,visible=true,refresh=null;
+let selected=0,placing=null,pivotLayer=null,visible=true,refresh=null,review=null,reviewLayer=null;
 const el=id=>document.getElementById(id),norm=x=>((x%360)+360)%360;
 const angle=(a,b)=>norm(Math.atan2((b.lng-a.lng)*Math.cos(a.lat*Math.PI/180),b.lat-a.lat)*180/Math.PI);
 const cw=(a,b)=>norm(b-a),ccw=(a,b)=>norm(a-b);
@@ -74,7 +74,7 @@ function draw(){
   const centre=[p.centre.lat,p.centre.lng];
   L.circleMarker(centre,{radius:7,color:'#fff',fillColor:i?'#e6a0ff':'#75edfc',fillOpacity:1,weight:2}).addTo(pivotLayer).bindTooltip(p.name+' centre');
   const prediction=simulate(p,now);
-  const tip=p.tip,observed=prediction?.angle??(tip?angle(p.centre,tip):null);
+  const tip=p.tip,observed=tip?angle(p.centre,tip):prediction?.angle;
   const length=tip?map.distance(centre,[tip.lat,tip.lng]):90;
   const radius=p.sprayRadiusMetres||(tip?length:null),outline=coveragePoints(p,radius);
   if(outline)L.polygon(outline,{color:'#37b7ff',weight:3,fillColor:'#2389ce',fillOpacity:0.10,dashArray:p.sprayRadiusMetres?null:'7 6'}).addTo(pivotLayer).bindTooltip(p.name+' coverage — '+(p.sprayRadiusMetres?'outer spray limit':'estimated from arm')+' ('+Math.round(radius)+' m)');
@@ -90,7 +90,11 @@ function draw(){
   if(observed===null)return;
   const rad=observed*Math.PI/180,lat=length*Math.cos(rad)/111320,lon=length*Math.sin(rad)/(111320*Math.cos(p.centre.lat*Math.PI/180));
   const to=[p.centre.lat+lat,p.centre.lng+lon];
-  L.polyline([centre,to],{color:i?'#e6a0ff':'#75edfc',weight:4,dashArray:prediction?.uncalibrated?'7 7':null}).addTo(pivotLayer).bindTooltip(p.name+(prediction?.uncalibrated?' (needs calibration)':' (estimated)'));
+  L.polyline([centre,to],{color:i?'#e6a0ff':'#75edfc',weight:3}).addTo(pivotLayer).bindTooltip(p.name+' last recorded arm position');
+  if(prediction&&!prediction.uncalibrated){
+    const predictedEnd=sprayPoint(p.centre,prediction.angle,length);
+    L.polyline([centre,predictedEnd],{color:'#ff9e2c',weight:5,dashArray:'10 8'}).addTo(pivotLayer).bindTooltip(p.name+' predicted now: '+prediction.angle.toFixed(1)+'°');
+  }
   L.circleMarker(to,{radius:5,color:'#fff',fillColor:i?'#e6a0ff':'#75edfc',fillOpacity:1}).addTo(pivotLayer);
 
  });
@@ -297,7 +301,89 @@ function addUI(){
  setInterval(()=>{if(el('pivotDialog')?.open)status();draw();},60000);
  form();
 }
+
+/* Map-based review is shown after laterals 20 and 27. No stored data are changed
+   until the operator explicitly confirms a position. */
+function recordReviewPosition(index,pt,dir){
+ const p=data.pivots[index],before=structuredClone(data),now=Date.now(),a=angle(p.centre,pt);
+ const prev=p.observations.at(-1);
+ if(prev&&now>prev.at&&p.type==='circle'){
+  const hours=runHours(prev.at,now);
+  if(hours>0.1){
+   const travel=between(prev.angle,a,dir);
+   const old=speedFor(p,dir);
+   const extra=old>0?Math.max(0,Math.round((old*hours-travel)/360)):0;
+   const rate=(travel+extra*360)/hours;
+   if(rate>0&&rate<=80){if(dir===1)p.speedCW=rate;else p.speedCCW=rate;}
+  }
+ }
+ p.tip=pt;p.direction=dir;
+ p.observations.push({at:now,angle:a,direction:dir});
+ p.observations=p.observations.slice(-200);
+ if(!persist()){data=before;return false;}
+ draw();return true;
+}
+function closeReview(success){
+ if(!review)return;
+ const current=review;review=null;
+ if(reviewLayer){reviewLayer.clearLayers();map.removeLayer(reviewLayer);reviewLayer=null;}
+ current.panel.remove();
+ map.off('click',current.onMapClick);
+ if(current.previousTransform!==undefined)el('map').style.transform=current.previousTransform;
+ if(typeof fitMovement==='function')fitMovement(true,true);
+ if(success)current.continueNavigation();
+}
+function reviewAfterLateral(n,continueNavigation){
+ const index=n===20?0:n===27?1:-1;
+ if(index<0||!map||!data.pivots[index]?.centre)return false;
+ if(review)closeReview(false);
+ selected=index;visible=true;draw();
+ const p=data.pivots[index],prediction=simulate(p,Date.now()),last=p.observations.at(-1);
+ const radius=p.sprayRadiusMetres||(p.tip?map.distance([p.centre.lat,p.centre.lng],[p.tip.lat,p.tip.lng]):100);
+ const outline=coveragePoints(p,Math.max(radius,50));
+ const points=outline?.length?outline:[[p.centre.lat,p.centre.lng],sprayPoint(p.centre,0,radius),sprayPoint(p.centre,180,radius)];
+ const previousTransform=el('map').style.transform;
+ el('map').style.transform='';
+ map.invalidateSize();
+ map.fitBounds(L.latLngBounds(points).pad(0.28),{animate:false,maxZoom:17});
+ reviewLayer=L.layerGroup().addTo(map);
+ const panel=document.createElement('div');panel.id='pivotReviewPanel';
+ panel.style.cssText='position:absolute;z-index:2400;left:50%;top:10%;transform:translateX(-50%);width:min(92%,530px);padding:16px;background:#102c27f5;color:white;border:3px solid #ffb153;border-radius:16px;text-align:center;box-shadow:0 6px 30px #000d';
+ const heading=document.createElement('div');heading.style.cssText='font-size:clamp(19px,4vw,29px);font-weight:900';
+ heading.textContent=(index===0?'FULL-CIRCLE':'BACK-AND-FORTH')+' PIVOT CHECK';
+ const detail=document.createElement('p');detail.style.cssText='font-size:16px;color:white;line-height:1.4';
+ detail.textContent=prediction&&!prediction.uncalibrated?'Orange dashed line = predicted position now ('+prediction.angle.toFixed(1)+'°). Confirm or correct it.':'Prediction not yet calibrated. Mark the actual arm position to improve tracking.';
+ const direction=document.createElement('select');direction.style.cssText='display:block;margin:8px auto;color:white;background:#24443c;font-size:16px';
+ direction.innerHTML='<option value="1">Moving clockwise</option><option value="-1">Moving anticlockwise</option>';direction.value=String(prediction?.direction||p.direction||1);direction.hidden=p.type!=='sector';
+ const bar=document.createElement('div');bar.style.cssText='display:flex;gap:10px;justify-content:center;flex-wrap:wrap';
+ const correct=document.createElement('button');correct.textContent='✓ Correct';correct.className='primary';
+ correct.disabled=!prediction||!!prediction.uncalibrated;
+ const adjust=document.createElement('button');adjust.textContent='Adjust position';
+ const cancel=document.createElement('button');cancel.textContent='Not now';cancel.style.cssText='font-size:13px';
+ bar.append(correct,adjust,cancel);panel.append(heading,detail,direction,bar);
+ document.querySelector('.mapwrap').appendChild(panel);
+ const onMapClick=e=>{
+  if(!review?.adjusting)return;
+  const pt={lat:e.latlng.lat,lng:e.latlng.lng},a=angle(p.centre,pt);
+  if(!confirm('Save actual arm position at '+a.toFixed(1)+'° for '+p.name+'?'))return;
+  if(recordReviewPosition(index,pt,Number(direction.value)))closeReview(true);
+ };
+ review={panel,onMapClick,previousTransform,continueNavigation,adjusting:false};
+ map.on('click',onMapClick);
+ correct.onclick=()=>{
+  if(!prediction||prediction.uncalibrated)return;
+  const point=sprayPoint(p.centre,prediction.angle,radius);
+  if(recordReviewPosition(index,{lat:point[0],lng:point[1]},Number(direction.value)))closeReview(true);
+ };
+ adjust.onclick=()=>{
+  review.adjusting=true;panel.style.top='2%';detail.textContent='Tap the ACTUAL arm tip on the map. You will confirm before saving.';bar.style.display='none';
+  const back=document.createElement('button');back.textContent='Cancel adjustment';back.onclick=()=>{review.adjusting=false;detail.textContent='Choose Correct or Adjust position.';bar.style.display='flex';back.remove();};panel.appendChild(back);
+ };
+ cancel.onclick=()=>closeReview(true);
+ return true;
+}
+
 function openDialog(){form();const notice=el('pivotSettingsSaved');if(notice)notice.hidden=true;el('pivotDialog').showModal();}
-window.irrigationPivots={exportData:()=>structuredClone(data),importData:value=>{if(value&&Array.isArray(value.pivots)&&value.pivots.length===2){data=value;persist();form();}}};
+window.irrigationPivots={reviewAfterLateral,exportData:()=>structuredClone(data),importData:value=>{if(value&&Array.isArray(value.pivots)&&value.pivots.length===2){data=value;persist();form();}}};
 addUI();
 })();
