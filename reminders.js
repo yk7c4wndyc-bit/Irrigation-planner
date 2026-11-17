@@ -7,7 +7,7 @@ try{const saved=JSON.parse(localStorage.getItem(KEY)||'[]');if(Array.isArray(sav
 let markers=null,visible=false,armed=false,editing=null,toastTimer=null,pressTimer=null,pressPosition=null,moving=null;
 const $id=id=>document.getElementById(id);
 function store(){try{localStorage.setItem(KEY,JSON.stringify(items));}catch(e){alert('Reminder could not be saved. Check available browser storage.');}}
-function pop(text){const el=$id('irrigationReminderToast');if(!el)return;el.textContent='🔔 '+text;el.hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.hidden=true,6000);}
+function pop(text){const el=$id('irrigationReminderToast');if(!el)return;el.textContent='🔔 '+text;el.hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.hidden=true,10000);}
 function render(){
  if(!map)return;
  if(!markers)markers=L.layerGroup().addTo(map);
@@ -47,8 +47,8 @@ function onGps(pos){
 function onMoved(n){if(Number(n)===7)pop('Check dam water level');}
 const toast=document.createElement('div');
 toast.id='irrigationReminderToast';toast.hidden=true;toast.setAttribute('role','status');
-toast.style.cssText='position:absolute;z-index:1800;left:50%;top:16%;transform:translateX(-50%);background:#14372f;box-shadow:0 4px 30px #000a;border:2px solid #f9d877;border-radius:14px;padding:16px 20px;color:white;font-size:19px;font-weight:750;text-align:center;width:max-content;max-width:90%;pointer-events:none;';
-document.querySelector('.mapwrap').appendChild(toast);
+toast.style.cssText='position:absolute;z-index:1800;left:50%;top:16%;transform:translateX(-50%);background:#14372f;box-shadow:0 4px 30px #000a;border:2px solid #f9d877;border-radius:14px;padding:16px 20px;color:white;font-size:clamp(25px,5vw,44px);line-height:1.18;font-weight:900;text-align:center;width:85%;max-width:720px;min-height:25%;display:flex;align-items:center;justify-content:center;pointer-events:none;';
+document.querySelector('.mapwrap').appendChild(toast);const reminderStyle=document.createElement('style');reminderStyle.textContent='#irrigationReminderToast[hidden]{display:none!important}';document.head.appendChild(reminderStyle);
 const controls=document.createElement('div');
 controls.style.cssText='display:flex;gap:6px;flex-wrap:wrap;';
 controls.innerHTML='<button type="button" id="gpsReminderAdd">Add GPS reminder</button><button type="button" id="gpsReminderToggle">Show GPS markers</button><button type="button" id="gpsReminderManage">Manage reminders</button>';
