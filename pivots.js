@@ -89,7 +89,7 @@ function draw(){
   const centre=[p.centre.lat,p.centre.lng];
   L.circleMarker(centre,{radius:7,color:'#fff',fillColor:i?'#e6a0ff':'#75edfc',fillOpacity:1,weight:2}).addTo(pivotLayer).bindTooltip(p.name+' centre');
   const prediction=simulate(p,now);
-  const tip=p.tip,observed=tip?angle(p.centre,tip):prediction?.angle;
+  const tip=p.tip,observed=prediction?.angle??(tip?angle(p.centre,tip):null);
   const length=tip?map.distance(centre,[tip.lat,tip.lng]):90;
   const radius=p.sprayRadiusMetres||(tip?length:null),outline=coveragePoints(p,radius);
   if(outline)L.polygon(outline,{color:'#37b7ff',weight:3,fillColor:'#2389ce',fillOpacity:0.10,dashArray:p.sprayRadiusMetres?null:'7 6'}).addTo(pivotLayer).bindTooltip(p.name+' coverage — '+(p.sprayRadiusMetres?'outer spray limit':'estimated from arm')+' ('+Math.round(radius)+' m)');
