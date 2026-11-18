@@ -348,7 +348,12 @@ function reviewAfterLateral(n,continueNavigation){
  map.fitBounds(L.latLngBounds(points).pad(0.28),{animate:false,maxZoom:17});
  reviewLayer=L.layerGroup().addTo(map);
  const panel=document.createElement('div');panel.id='pivotReviewPanel';
- panel.style.cssText='position:absolute;z-index:2400;left:50%;top:10%;transform:translateX(-50%);width:min(92%,530px);padding:16px;background:#102c27f5;color:white;border:3px solid #ffb153;border-radius:16px;text-align:center;box-shadow:0 6px 30px #000d';
+ panel.style.cssText='position:absolute;z-index:2400;left:50%;top:10%;transform:translateX(-50%);width:min(92%,530px);padding:16px;background:#102c27f5;color:white;border:3px solid #ffb153;border-radius:16px;text-align:center;box-shadow:0 6px 30px #000d;touch-action:none;';
+ const dragHandle=document.createElement('div');dragHandle.textContent='☰ Drag this box to move it';dragHandle.style.cssText='padding:8px;margin:-8px -8px 8px;cursor:grab;font-size:13px;color:#ffdda1;touch-action:none;user-select:none';
+ let dragStart=null;
+ dragHandle.addEventListener('pointerdown',e=>{dragStart={x:e.clientX,y:e.clientY,left:panel.offsetLeft,top:panel.offsetTop};panel.style.transform='none';panel.style.left=dragStart.left+'px';panel.style.top=dragStart.top+'px';dragHandle.setPointerCapture(e.pointerId);e.preventDefault();});
+ dragHandle.addEventListener('pointermove',e=>{if(!dragStart)return;const host=document.querySelector('.mapwrap');const left=dragStart.left+e.clientX-dragStart.x,top=dragStart.top+e.clientY-dragStart.y;panel.style.left=Math.max(-panel.offsetWidth+45,Math.min(host.clientWidth-45,left))+'px';panel.style.top=Math.max(-panel.offsetHeight+45,Math.min(host.clientHeight-45,top))+'px';});
+ const endDrag=()=>{dragStart=null};dragHandle.addEventListener('pointerup',endDrag);dragHandle.addEventListener('pointercancel',endDrag);
  const heading=document.createElement('div');heading.style.cssText='font-size:clamp(19px,4vw,29px);font-weight:900';
  heading.textContent=(index===0?'FULL-CIRCLE':'BACK-AND-FORTH')+' PIVOT CHECK';
  const detail=document.createElement('p');detail.style.cssText='font-size:16px;color:white;line-height:1.4';
@@ -361,7 +366,7 @@ function reviewAfterLateral(n,continueNavigation){
  const adjust=document.createElement('button');adjust.textContent='Adjust position on map';
  const gps=document.createElement('button');gps.textContent='📍 Mark arm tip at my GPS';gps.type='button';
  const cancel=document.createElement('button');cancel.textContent='Not now';cancel.style.cssText='font-size:13px';
- bar.append(correct,adjust,gps,cancel);panel.append(heading,detail,direction,bar);
+ bar.append(correct,adjust,gps,cancel);panel.append(dragHandle,heading,detail,direction,bar);
  document.querySelector('.mapwrap').appendChild(panel);
  const onMapClick=e=>{
   if(!review?.adjusting)return;
