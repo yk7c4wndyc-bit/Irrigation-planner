@@ -31,7 +31,22 @@ function runHours(t0,t1){
  }
  return result;
 }
-function speedFor(p,d){return d===1?p.speedCW:p.speedCCW;}
+function speedFor(p,d){return (d===1?p.speedCW:p.speedCCW)||(p.type==='sector'?(d===1?p.speedCCW:p.speedCW):null);}
+// A sector initially uses the measured speed in either direction until a return speed is learned.
+function calibrateSector(p,prev,a,dir,now){
+ if(p.type!=='sector'||!prev||p.bounds.length!==2)return;
+ const span=cw(p.bounds[0],p.bounds[1]),hours=runHours(prev.at,now);
+ if(!(span>=10&&span<=350&&hours>0.1))return;
+ const start=cw(p.bounds[0],prev.angle),end=cw(p.bounds[0],a);
+ if(start>span+3||end>span+3)return;
+ // Only infer speed when the observation pair can represent one uninterrupted leg.
+ // A crossing of a turning limit is ambiguous and must not be used to calibrate.
+ const travel=dir===1?end-start:start-end;
+ const priorDirection=prev.direction||dir;
+ if(priorDirection!==dir||travel<=0)return;
+ const rate=travel/hours;
+ if(rate>0&&rate<=80){if(dir===1)p.speedCW=rate;else p.speedCCW=rate;}
+}
 function simulate(p,when){
  const last=p.observations.at(-1);if(!last||!p.centre)return null;
  let a=last.angle,d=last.direction||p.direction||1;
@@ -102,7 +117,7 @@ function draw(){
 function status(){
  const p=data.pivots[selected],last=p.observations.at(-1),pred=simulate(p,Date.now());
  const deg=pred?pred.angle.toFixed(1)+'°':'Not calibrated';
- const speeds='Clockwise: '+(p.speedCW?.toFixed(2)??'—')+'°/running hr · Anticlockwise: '+(p.speedCCW?.toFixed(2)??'—')+'°/running hr';
+ const speeds='Clockwise: '+(p.speedCW?.toFixed(2)??'—')+'°/running hr · Anticlockwise: '+(p.speedCCW?.toFixed(2)??'—')+'°/running hr'+(p.type==='sector'&&((!p.speedCW&&p.speedCCW)||(!p.speedCCW&&p.speedCW))?' (using known speed for both directions until recalibrated)':'');
  const sprayInfo='\nOuter spray limit: '+(p.sprayRadiusMetres?Math.round(p.sprayRadiusMetres)+' m saved':'not marked');
  const limitInfo=p.type==='sector'?'\nFirst turning limit: '+(Number.isFinite(p.bounds[0])?p.bounds[0].toFixed(1)+'° saved':'not marked')+'\nSecond turning limit: '+(Number.isFinite(p.bounds[1])?p.bounds[1].toFixed(1)+'° saved':'not marked'):'';
  el('pivotStatus').textContent='Estimated angle: '+deg+(pred?.uncalibrated?' (speed unknown)':'')+'\n'+speeds+'\nLast observed: '+(last?new Date(last.at).toLocaleString():'never')+limitInfo+sprayInfo+(p.stopped?'\nPAUSED due to fault':'');
@@ -151,8 +166,7 @@ function sample(atPoint){
     if(p.type==='circle'&&next>0&&next<=80){
      if(d===1)p.speedCW=next;else p.speedCCW=next;
     }
-    // Sector speeds must be entered or inferred manually since a reversal may be hidden
-    // between observations. Do not assume that endpoint angles imply a unique speed.
+    if(p.type==='sector')calibrateSector(p,prev,a,d,now);
    }
   }
   p.observations.push({at:now,angle:a,direction:d});
@@ -252,7 +266,7 @@ function addUI(){
  '<label>Common start time<input id="pivotStart" type="time"></label><label>Common stop time<input id="pivotEnd" type="time"></label>'+
  '<div class="bar"><button id="pivotCentre" type="button">Mark centre on map</button><button id="pivotCentreGPS" type="button">Use current GPS for centre</button><button id="pivotArmGPS" type="button">Mark arm at my GPS location</button><button id="pivotArm" type="button">Mark arm on map</button><button id="pivotSpray" type="button">Mark outer spray limit on map</button><button id="pivotSprayGPS" type="button">Use GPS for outer spray limit</button><button id="pivotLimit1" type="button">Mark first limit</button><button id="pivotLimit2" type="button">Mark second limit</button></div>'+
  '<label>Current direction<select id="pivotDirection"><option value="1">Clockwise</option><option value="-1">Anticlockwise</option></select></label>'+
- '<p class="small">For the back-and-forth pivot, enter speeds after checking direction and travel. One day’s positions alone may not reveal when it reversed.</p>'+
+ '<p class="small">For the back-and-forth pivot, the known speed is used for both directions until a new same-direction GPS or map observation measures the return speed. Check the turning limits and current direction.</p>'+
  '<label>Clockwise speed (degrees per running hour)<input id="pivotCW" type="number" min="0.01" step="0.01" placeholder="Unknown"></label>'+
  '<label>Anticlockwise speed (degrees per running hour)<input id="pivotCCW" type="number" min="0.01" step="0.01" placeholder="Unknown"></label>'+
  '<p id="pivotStatus" class="small" style="white-space:pre-line"></p>'+
@@ -307,6 +321,7 @@ function addUI(){
 function recordReviewPosition(index,pt,dir,recalibrate=true){
  const p=data.pivots[index],before=structuredClone(data),now=Date.now(),a=angle(p.centre,pt);
  const prev=p.observations.at(-1);
+ if(recalibrate&&prev&&now>prev.at&&p.type==='sector')calibrateSector(p,prev,a,dir,now);
  if(recalibrate&&prev&&now>prev.at&&p.type==='circle'){
   const hours=runHours(prev.at,now);
   if(hours>0.1){
