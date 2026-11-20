@@ -435,8 +435,14 @@ function skipClockwiseReturn(n){
  if(n===24)decideAfterLateral24();
  const nextUnit=nextUnfinishedAfter(n);
  persist();
- if(nextUnit!==undefined){overviewActive=true;overviewStart=locationPoint?[locationPoint.lat,locationPoint.lng]:null;setSelected(nextUnit,true);msg('Lateral '+n+' clockwise return postponed until the next shift day.');}
- else{show();msg('Clockwise return postponed until the next shift day.');announceRotationComplete();}
+ const continueShift=()=>{
+  if(nextUnit!==undefined){overviewActive=true;overviewStart=locationPoint?[locationPoint.lat,locationPoint.lng]:null;setSelected(nextUnit,true);msg('Lateral '+n+' clockwise return postponed until the next shift day.');}
+  else{show();msg('Clockwise return postponed until the next shift day.');announceRotationComplete();}
+ };
+ if(n===27){
+  const reviewPivot=()=>{if(window.irrigationPivots?.reviewAfterLateral?.(27,continueShift))return;continueShift();};
+  if(!maybeShowPivotInspection(reviewPivot))reviewPivot();
+ }else continueShift();
 }
 function setDone(n,done){if(state.paused){msg("Resume rotation first.");return;}
  if(done){
@@ -531,9 +537,9 @@ function drawAdjustments(){
 }
 
 function distanceM(a,b){const rad=x=>x*Math.PI/180;let dLat=rad(b[0]-a[0]),dLng=rad(b[1]-a[1]);let q=Math.sin(dLat/2)**2+Math.cos(rad(a[0]))*Math.cos(rad(b[0]))*Math.sin(dLng/2)**2;return 6371000*2*Math.atan2(Math.sqrt(q),Math.sqrt(1-q));}
-let lastSpokenCue='',lastSpokenAt=0,voiceMoveLateral=null,voicePickupReached=false;
-const PICKUP_AUDIO_RADIUS_M=18,VOICE_INTERVAL_MS=4000;
-function resetVoiceGuidance(){voiceMoveLateral=null;voicePickupReached=false;lastSpokenCue='';lastSpokenAt=0;}
+let guidanceLateral=null,pickupReached=false;
+const PICKUP_GUIDANCE_RADIUS_M=18;
+function resetMovementGuidance(){guidanceLateral=null;pickupReached=false;}
 function updateDistance(){
  if(isDone(selected)||gpsWatch===null)dropButtonLatchedFor=null;
  $('dropNow').hidden=true;
@@ -546,14 +552,14 @@ function updateDistance(){
  const accuracy=Math.round(locationPoint.accuracy||0);
  $('distanceText').textContent=`Distance to target: ${meters} m · GPS accuracy ±${accuracy} m`;
  label.textContent=`${meters} m to target · ±${accuracy} m GPS`;
- if(voiceMoveLateral!==selected){resetVoiceGuidance();voiceMoveLateral=selected;}
+ if(guidanceLateral!==selected){resetMovementGuidance();guidanceLateral=selected;}
  const pickup=currentPoint(selected);
  const pickupDistance=pickup?distanceM(here,pickup):Infinity;
- if(pickupDistance<=PICKUP_AUDIO_RADIUS_M)voicePickupReached=true;
+ if(pickupDistance<=PICKUP_GUIDANCE_RADIUS_M)pickupReached=true;
  let cue='';
- if(!voicePickupReached||isDone(selected)||!pickup||distanceM(pickup,destination)<1){
+ if(!pickupReached||isDone(selected)||!pickup||distanceM(pickup,destination)<1){
   arrow.textContent='↑';
-  arrow.title=voicePickupReached?'No movement guidance needed':'Voice guidance starts near the pickup position';
+  arrow.title=pickupReached?'No movement guidance needed':'Direction indicator starts near the pickup position';
  }else if(exactMeters<=Math.max(3,Math.min(6,accuracy))){
   arrow.textContent='◎';arrow.title='Near drop position';
  }else{
@@ -571,11 +577,7 @@ function updateDistance(){
   else {arrow.textContent='↑';arrow.title='On movement line';}
  }
  arrow.setAttribute('aria-label',cue||'On course or outside guidance area');
- const now=Date.now();
- if(cue&&gpsWatch!==null&&now-lastSpokenAt>=VOICE_INTERVAL_MS&&'speechSynthesis' in window){
-  lastSpokenCue=cue;lastSpokenAt=now;
-  try{window.speechSynthesis.cancel();const utterance=new SpeechSynthesisUtterance(cue);utterance.lang='en-AU';utterance.rate=1.1;window.speechSynthesis.speak(utterance);}catch(e){}
- }
+
 }
 let gpsWatch=null;function refreshMapSize(){
  const viewport=window.visualViewport;
@@ -644,7 +646,7 @@ async function toggleHeadingLock(){
   msg('Heading lock active. Hold your phone flat and point its top forward. Waiting for compass if map does not rotate.');
  }catch(err){msg('Could not enable compass: '+(err?.message||err));}
 }
-function startGPS(){if(state.paused){msg("Resume rotation to start GPS.");return;}if(!navigator.geolocation){msg('GPS is unavailable in this browser.');return;}if(gpsWatch!==null){navigator.geolocation.clearWatch(gpsWatch);gpsWatch=null;resetVoiceGuidance();dropButtonLatchedFor=null;$('dropNow').hidden=true;$('gps').textContent='📍 Start live GPS';$('mapStopGPS').hidden=true;setMapFullscreen(false);state.activeTiming=null;persist();renderShiftTimer();return;}if(!window.isSecureContext){msg('Live GPS requires HTTPS. This local HTML file is not a secure site. Publish it to HTTPS before using GPS on iPhone.');return;}setMapFullscreen(true);beginShiftTiming(selected);msg('Requesting location permission…');gpsWatch=navigator.geolocation.watchPosition(p=>{locationPoint={lat:p.coords.latitude,lng:p.coords.longitude,accuracy:p.coords.accuracy,heading:p.coords.heading,speed:p.coords.speed};gpsLayer.clearLayers();L.circle([locationPoint.lat,locationPoint.lng],{radius:p.coords.accuracy,color:'#347fff',weight:1,fillOpacity:.07}).addTo(gpsLayer);const heading=Number.isFinite(p.coords.heading)&&p.coords.heading>=0&&Number.isFinite(p.coords.speed)&&p.coords.speed>=0.5?p.coords.heading:null;if(heading!==null){L.marker([locationPoint.lat,locationPoint.lng],{interactive:false,icon:L.divIcon({className:'',html:'<div style="width:30px;height:30px;display:grid;place-items:center;transform:rotate('+heading+'deg);filter:drop-shadow(0 1px 3px #1227)"><svg width="30" height="30" viewBox="0 0 30 30" aria-hidden="true"><path d="M15 2 L26 26 L15 21 L4 26 Z" fill="#347fff" stroke="white" stroke-width="2.2" stroke-linejoin="round"/></svg></div>',iconSize:[30,30],iconAnchor:[15,15]})}).addTo(gpsLayer);}else{L.circleMarker([locationPoint.lat,locationPoint.lng],{radius:7,color:'#fff',weight:2,fillColor:'#347fff',fillOpacity:1}).addTo(gpsLayer);}updateGPSHeading(p.coords);if(headingLock)applyHeadingCamera();if(follow)fitMovement(true);updateDistance();window.irrigationReminders?.onGps(locationPoint);msg('GPS is active.');},err=>{$('dropNow').hidden=true;state.activeTiming=null;persist();renderShiftTimer();msg('GPS error: '+err.message);},{enableHighAccuracy:true,maximumAge:2000,timeout:15000});$('gps').textContent='Stop GPS';$('mapStopGPS').hidden=false;}
+function startGPS(){if(state.paused){msg("Resume rotation to start GPS.");return;}if(!navigator.geolocation){msg('GPS is unavailable in this browser.');return;}if(gpsWatch!==null){navigator.geolocation.clearWatch(gpsWatch);gpsWatch=null;resetMovementGuidance();dropButtonLatchedFor=null;$('dropNow').hidden=true;$('gps').textContent='📍 Start live GPS';$('mapStopGPS').hidden=true;setMapFullscreen(false);state.activeTiming=null;persist();renderShiftTimer();return;}if(!window.isSecureContext){msg('Live GPS requires HTTPS. This local HTML file is not a secure site. Publish it to HTTPS before using GPS on iPhone.');return;}setMapFullscreen(true);beginShiftTiming(selected);msg('Requesting location permission…');gpsWatch=navigator.geolocation.watchPosition(p=>{locationPoint={lat:p.coords.latitude,lng:p.coords.longitude,accuracy:p.coords.accuracy,heading:p.coords.heading,speed:p.coords.speed};gpsLayer.clearLayers();L.circle([locationPoint.lat,locationPoint.lng],{radius:p.coords.accuracy,color:'#347fff',weight:1,fillOpacity:.07}).addTo(gpsLayer);const heading=Number.isFinite(p.coords.heading)&&p.coords.heading>=0&&Number.isFinite(p.coords.speed)&&p.coords.speed>=0.5?p.coords.heading:null;if(heading!==null){L.marker([locationPoint.lat,locationPoint.lng],{interactive:false,icon:L.divIcon({className:'',html:'<div style="width:30px;height:30px;display:grid;place-items:center;transform:rotate('+heading+'deg);filter:drop-shadow(0 1px 3px #1227)"><svg width="30" height="30" viewBox="0 0 30 30" aria-hidden="true"><path d="M15 2 L26 26 L15 21 L4 26 Z" fill="#347fff" stroke="white" stroke-width="2.2" stroke-linejoin="round"/></svg></div>',iconSize:[30,30],iconAnchor:[15,15]})}).addTo(gpsLayer);}else{L.circleMarker([locationPoint.lat,locationPoint.lng],{radius:7,color:'#fff',weight:2,fillColor:'#347fff',fillOpacity:1}).addTo(gpsLayer);}updateGPSHeading(p.coords);if(headingLock)applyHeadingCamera();if(follow)fitMovement(true);updateDistance();window.irrigationReminders?.onGps(locationPoint);msg('GPS is active.');},err=>{$('dropNow').hidden=true;state.activeTiming=null;persist();renderShiftTimer();msg('GPS error: '+err.message);},{enableHighAccuracy:true,maximumAge:2000,timeout:15000});$('gps').textContent='Stop GPS';$('mapStopGPS').hidden=false;}
 function updatePauseButton(){
  for(const id of ['pauseRotation','mapPauseRotation']){$(id).textContent=state.paused?'▶ Resume':'⏸ Pause';}
  document.body.classList.toggle('rotation-paused',!!state.paused);
@@ -655,7 +657,7 @@ function toggleRotationPause(){
  if(!state.paused){
   if(state.activeTiming?.startedAt){state.activeTiming.elapsedMs=activeShiftMs(state.activeTiming);state.activeTiming.startedAt=null;}
   state.paused=true;state.selectedUnit=selected;persist();
-  if(gpsWatch!==null){navigator.geolocation.clearWatch(gpsWatch);gpsWatch=null;resetVoiceGuidance();$('gps').textContent='📍 Start live GPS';$('mapStopGPS').hidden=true;}
+  if(gpsWatch!==null){navigator.geolocation.clearWatch(gpsWatch);gpsWatch=null;resetMovementGuidance();$('gps').textContent='📍 Start live GPS';$('mapStopGPS').hidden=true;}
   dropButtonLatchedFor=null;$('dropNow').hidden=true;setMapFullscreen(false);show();msg('Rotation paused and saved.');
  }else{
   state.paused=false;state.selectedUnit=selected;
