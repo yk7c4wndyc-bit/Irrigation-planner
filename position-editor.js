@@ -11,8 +11,8 @@ for(const n of [12,14]){
 }
 if(typeof renderMap==='function')renderMap();
 let active=false,layer=null,working=null,undo=[],panel=null;
-const host=document.getElementById('quickPlanningDialog')||document.getElementById('quickAddGps')?.parentElement;
-const button=document.createElement('button');button.type='button';button.textContent='📍 Edit lateral positions (12 & 14)';button.style.cssText='display:block;width:100%;min-height:46px;margin:8px 0;border:2px solid #f5c65e';const anchor=document.getElementById('quickAddGps');if(anchor&&anchor.parentElement)anchor.insertAdjacentElement('beforebegin',button);else host?.append(button);
+const button=document.getElementById('quickEditLateralPositions');
+if(!button)return;
 function circleRadius(n){return Number(equipment[n]?.throw)||12;}
 function paint(){
  if(!layer)layer=L.layerGroup().addTo(map);layer.clearLayers();
