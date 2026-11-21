@@ -11,8 +11,8 @@ for(const n of [12,14]){
 }
 if(typeof renderMap==='function')renderMap();
 let active=false,layer=null,working=null,undo=[],panel=null;
-const host=document.getElementById('gpsReminderControls');
-const button=document.createElement('button');button.type='button';button.textContent='Edit lateral 12 & 14 positions';button.style.marginTop='8px';host?.append(button);
+const host=document.getElementById('quickPlanningDialog')||document.getElementById('quickAddGps')?.parentElement;
+const button=document.createElement('button');button.type='button';button.textContent='📍 Edit lateral positions (12 & 14)';button.style.cssText='display:block;width:100%;min-height:46px;margin:8px 0;border:2px solid #f5c65e';const anchor=document.getElementById('quickAddGps');if(anchor&&anchor.parentElement)anchor.insertAdjacentElement('beforebegin',button);else host?.append(button);
 function circleRadius(n){return Number(equipment[n]?.throw)||12;}
 function paint(){
  if(!layer)layer=L.layerGroup().addTo(map);layer.clearLayers();
@@ -32,9 +32,9 @@ function paint(){
 }
 function close(){active=false;layer?.remove();layer=null;panel?.remove();panel=null;button.disabled=false;if(typeof renderMap==='function')renderMap();}
 button.onclick=()=>{
- if(active||!map)return;active=true;button.disabled=true;
+ if(active||!map)return;document.getElementById('quickPlanningDialog')?.close();active=true;button.disabled=true;
  working={12:structuredClone(base.routes[12]),14:structuredClone(base.routes[14])};undo=[];
- panel=document.createElement('div');panel.style.cssText='position:absolute;top:12px;left:50%;transform:translateX(-50%);z-index:1600;background:#15382f;color:white;border:2px solid #9ee7cb;border-radius:12px;padding:10px;max-width:94%;display:flex;gap:7px;align-items:center;flex-wrap:wrap;justify-content:center;box-shadow:0 3px 18px #0009';
+ panel=document.createElement('div');panel.style.cssText='position:absolute;top:80px;left:50%;transform:translateX(-50%);z-index:1600;background:#15382f;color:white;border:2px solid #9ee7cb;border-radius:12px;padding:10px;max-width:94%;display:flex;gap:7px;align-items:center;flex-wrap:wrap;justify-content:center;box-shadow:0 3px 18px #0009';
  const heading=document.createElement('strong');heading.textContent='11 fixed · drag 12 & 14';
  const undoButton=document.createElement('button');undoButton.textContent='Undo';undoButton.onclick=()=>{if(undo.length){working=undo.pop();paint();}};
  const save=document.createElement('button');save.textContent='Save';save.className='primary';save.onclick=()=>{
