@@ -281,6 +281,7 @@ function finishShiftTiming(n){
  showShiftResult(n,seconds,average);
  state.activeTiming=null;
 }
+function fmtDayTotal(seconds){seconds=Math.max(0,Math.round(seconds));const hours=Math.floor(seconds/3600),mins=Math.floor(seconds%3600/60);return hours?hours+'h '+String(mins).padStart(2,'0')+'m':mins+'m '+String(seconds%60).padStart(2,'0')+'s';}
 function finishDayTiming(){
  if(!state.dayTimingStart)return;
  const end=Date.now();
@@ -297,9 +298,9 @@ function finishDayTiming(){
   const diff=average===null?null:Math.round(seconds-average);
   panel.style.background=diff===null?'#193b45':diff<=0?'#166534':'#991b1b';
   $('shiftResultTitle').textContent='ALL LATERALS — DAY COMPLETE';
-  $('shiftResultTime').textContent=fmtShiftTime(seconds);
+  $('shiftResultTime').textContent=fmtDayTotal(seconds);
   $('shiftResultDifference').textContent=diff===null?'First full-day result':(diff<0?Math.abs(diff)+' seconds faster':diff>0?diff+' seconds slower':'Exactly on average');
-  $('shiftResultAverage').textContent=average===null?'Average available after another completed day':'Average total: '+fmtShiftTime(average);
+  $('shiftResultAverage').textContent=average===null?'Average available after another completed day':'Average total: '+fmtDayTotal(average);
   panel.hidden=false;shiftResultTimeout=setTimeout(()=>panel.hidden=true,12000);
  }
 }
