@@ -47,6 +47,36 @@ function calibrateSector(p,prev,a,dir,now){
  const rate=travel/hours;
  if(rate>0&&rate<=80){if(dir===1)p.speedCW=rate;else p.speedCCW=rate;}
 }
+// Derive a provisional sector speed from recorded movement when the saved
+// clockwise/anticlockwise speed is still empty. Ignore implausible intervals.
+function recoverSectorSpeed(p){
+ if(p.type!=='sector'||p.bounds?.length!==2||p.observations.length<2)return;
+ const span=cw(p.bounds[0],p.bounds[1]);
+ if(!(span>=10&&span<=350))return;
+ const candidates={1:[],[-1]:[]},obs=p.observations;
+ for(let i=Math.max(1,obs.length-15);i<obs.length;i++){
+  const a=obs[i-1],b=obs[i],hours=runHours(a.at,b.at);
+  if(!(hours>=0.5))continue;
+  const x=cw(p.bounds[0],a.angle),y=cw(p.bounds[0],b.angle);
+  if(x>span+3||y>span+3)continue;
+  const delta=y-x,dir=Math.sign(delta),rate=Math.abs(delta)/hours;
+  if(dir&&rate>=0.1&&rate<=40)candidates[dir].push({rate,weight:i});
+ }
+ for(const dir of [1,-1]){
+  const list=candidates[dir];
+  if(!list.length)continue;
+  const mean=list.reduce((a,x)=>a+x.rate*x.weight,0)/list.reduce((a,x)=>a+x.weight,0);
+  if(dir===1&&!(p.speedCW>0))p.speedCW=mean;
+  if(dir===-1&&!(p.speedCCW>0))p.speedCCW=mean;
+ }
+ const a=obs.at(-2),b=obs.at(-1);
+ const x=cw(p.bounds[0],a.angle),y=cw(p.bounds[0],b.angle);
+ if(x<=span+3&&y<=span+3&&Math.abs(y-x)>1){
+  const dir=Math.sign(y-x);
+  p.direction=dir;b.direction=dir;
+ }
+}
+data.pivots.forEach(recoverSectorSpeed);
 function simulate(p,when){
  const last=p.observations.at(-1);if(!last||!p.centre)return null;
  let a=last.angle,d=last.direction||p.direction||1;
@@ -89,7 +119,7 @@ function draw(){
   const centre=[p.centre.lat,p.centre.lng];
   L.circleMarker(centre,{radius:7,color:'#fff',fillColor:i?'#e6a0ff':'#75edfc',fillOpacity:1,weight:2}).addTo(pivotLayer).bindTooltip(p.name+' centre');
   const prediction=simulate(p,now);
-  const tip=p.tip,observed=prediction?.angle??(tip?angle(p.centre,tip):null);
+  const tip=p.tip,last=p.observations.at(-1),observed=last?.angle??(tip?angle(p.centre,tip):null);
   const length=tip?map.distance(centre,[tip.lat,tip.lng]):90;
   const radius=p.sprayRadiusMetres||(tip?length:null),outline=coveragePoints(p,radius);
   if(outline)L.polygon(outline,{color:'#37b7ff',weight:3,fillColor:'#2389ce',fillOpacity:0.10,dashArray:p.sprayRadiusMetres?null:'7 6'}).addTo(pivotLayer).bindTooltip(p.name+' coverage — '+(p.sprayRadiusMetres?'outer spray limit':'estimated from arm')+' ('+Math.round(radius)+' m)');
@@ -172,6 +202,7 @@ function sample(atPoint){
   p.observations.push({at:now,angle:a,direction:d});
   p.observations=p.observations.slice(-200);
   p.direction=d;
+  recoverSectorSpeed(p);
  }else if(mode==='spray'){const d=map.distance([p.centre.lat,p.centre.lng],[pt.lat,pt.lng]);if(d<5||d>2500){alert('Spray limit must be 5–2500 m from the pivot centre. Nothing saved.');form();return false;}p.sprayRadiusMetres=d;}
  else if(mode==='limit1'){p.type='sector';p.bounds[0]=angle(p.centre,pt);}
  else if(mode==='limit2'){p.type='sector';p.bounds[1]=angle(p.centre,pt);}
