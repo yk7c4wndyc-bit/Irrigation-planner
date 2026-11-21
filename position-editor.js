@@ -41,7 +41,7 @@ button.onclick=()=>{
   if(!confirm('Save the adjusted positions for laterals 12 and 14? This changes their future GPS targets.'))return;
   const previous={12:structuredClone(base.routes[12]),14:structuredClone(base.routes[14])};
   try{localStorage.setItem(KEY,JSON.stringify(working));}catch(e){alert('Could not save edited positions. Nothing changed.');return;}
-  try{base.routes[12]=structuredClone(working[12]);base.routes[14]=structuredClone(working[14]);close();alert('Saved positions for laterals 12 and 14. Export an irrigation backup to keep a separate copy.');}catch(e){base.routes[12]=previous[12];base.routes[14]=previous[13];alert('Could not apply positions: '+e.message);}
+  try{base.routes[12]=structuredClone(working[12]);base.routes[14]=structuredClone(working[14]);close();alert('Saved positions for laterals 12 and 14. Export an irrigation backup to keep a separate copy.');}catch(e){base.routes[12]=previous[12];base.routes[14]=previous[14];alert('Could not apply positions: '+e.message);}
  };
  const cancel=document.createElement('button');cancel.textContent='Cancel';cancel.onclick=close;
  panel.append(heading,undoButton,save,cancel);document.querySelector('.mapwrap').append(panel);
