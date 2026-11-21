@@ -47,6 +47,46 @@ function calibrateSector(p,prev,a,dir,now){
  const rate=travel/hours;
  if(rate>0&&rate<=80){if(dir===1)p.speedCW=rate;else p.speedCCW=rate;}
 }
+// Recalculate from several recent observation intervals, not only the latest pair.
+// For a reversing sector, use positions along the marked arc to infer travel direction.
+function recalibrateHistory(p){
+ const obs=p.observations||[];if(obs.length<2)return;
+ const sector=p.type==='sector'&&p.bounds.length===2;
+ const span=sector?cw(p.bounds[0],p.bounds[1]):0;
+ if(sector&&(span<10||span>350))return;
+ const rates={1:[],[-1]:[]};
+ for(let i=Math.max(1,obs.length-20);i<obs.length;i++){
+  const a=obs[i-1],b=obs[i],hours=runHours(a.at,b.at);
+  if(!(hours>=0.5))continue;
+  let delta,dir;
+  if(sector){
+   const x=cw(p.bounds[0],a.angle),y=cw(p.bounds[0],b.angle);
+   if(x>span+3||y>span+3)continue;
+   delta=y-x;dir=Math.sign(delta);
+   // A reversal inside an observation interval is ambiguous: only use
+   // the interval when its observed displacement is plausible.
+  }else{
+   dir=b.direction||p.direction||1;
+   delta=between(a.angle,b.angle,dir);
+  }
+  const rate=Math.abs(delta)/hours;
+  if(!dir||!(rate>0.15&&rate<=80))continue;
+  rates[dir].push({rate,weight:i-Math.max(1,obs.length-20)+1});
+ }
+ for(const dir of [1,-1]){
+  const samples=rates[dir];if(!samples.length)continue;
+  const mean=samples.reduce((sum,x)=>sum+x.rate*x.weight,0)/samples.reduce((sum,x)=>sum+x.weight,0);
+  if(dir===1)p.speedCW=mean;else p.speedCCW=mean;
+ }
+ if(sector){
+  const a=obs.at(-2),b=obs.at(-1);
+  const x=cw(p.bounds[0],a.angle),y=cw(p.bounds[0],b.angle);
+  if(x<=span+3&&y<=span+3&&Math.abs(y-x)>1)p.direction=Math.sign(y-x);
+  // The latest measured travel direction overrides a stale manual selector.
+  if(Math.abs(y-x)>1)b.direction=p.direction;
+ }
+}
+data.pivots.forEach(recalibrateHistory);
 function simulate(p,when){
  const last=p.observations.at(-1);if(!last||!p.centre)return null;
  let a=last.angle,d=last.direction||p.direction||1;
@@ -172,6 +212,7 @@ function sample(atPoint){
   p.observations.push({at:now,angle:a,direction:d});
   p.observations=p.observations.slice(-200);
   p.direction=d;
+  recalibrateHistory(p);
  }else if(mode==='spray'){const d=map.distance([p.centre.lat,p.centre.lng],[pt.lat,pt.lng]);if(d<5||d>2500){alert('Spray limit must be 5–2500 m from the pivot centre. Nothing saved.');form();return false;}p.sprayRadiusMetres=d;}
  else if(mode==='limit1'){p.type='sector';p.bounds[0]=angle(p.centre,pt);}
  else if(mode==='limit2'){p.type='sector';p.bounds[1]=angle(p.centre,pt);}
