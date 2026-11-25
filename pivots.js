@@ -22,8 +22,8 @@ function runHours(t0,t1){
  if(t1<=t0)return 0;
  return (Array.isArray(data.authorizedRuns)?data.authorizedRuns:[]).reduce((sum,r)=>sum+(Number.isFinite(r.start)&&Number.isFinite(r.end)?Math.max(0,Math.min(t1,r.end)-Math.max(t0,r.start))/3600000:0),0);
 }
-function authorizeNextRun(){
- const now=new Date(), start=mins(data.start),end=mins(data.end);
+function authorizeNextRun(completedAt=Date.now()){
+ const now=new Date(completedAt), start=mins(data.start),end=mins(data.end);
  const a=new Date(now);a.setHours(Math.floor(start/60),start%60,0,0);
  if(+a<+now)a.setDate(a.getDate()+1);
  const b=new Date(a);b.setHours(Math.floor(end/60),end%60,0,0);if(end<=start)b.setDate(b.getDate()+1);
