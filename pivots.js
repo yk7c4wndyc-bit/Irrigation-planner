@@ -17,7 +17,21 @@ const cw=(a,b)=>norm(b-a),ccw=(a,b)=>norm(a-b);
 const between=(a,b,dir)=>dir===1?cw(a,b):ccw(a,b);
 function persist(){try{localStorage.setItem(KEY,JSON.stringify(data));return true;}catch(e){alert('Could not save pivots in this browser. Nothing was saved.');return false;}}
 function mins(t){const [h,m]=t.split(':').map(Number);return h*60+m;}
+// Only explicitly scheduled nights count; older observations remain intact.
 function runHours(t0,t1){
+ if(t1<=t0)return 0;
+ return (Array.isArray(data.authorizedRuns)?data.authorizedRuns:[]).reduce((sum,r)=>sum+(Number.isFinite(r.start)&&Number.isFinite(r.end)?Math.max(0,Math.min(t1,r.end)-Math.max(t0,r.start))/3600000:0),0);
+}
+function authorizeNextRun(){
+ const now=new Date(), start=mins(data.start),end=mins(data.end);
+ const a=new Date(now);a.setHours(Math.floor(start/60),start%60,0,0);
+ if(+a<+now)a.setDate(a.getDate()+1);
+ const b=new Date(a);b.setHours(Math.floor(end/60),end%60,0,0);if(end<=start)b.setDate(b.getDate()+1);
+ const runs=Array.isArray(data.authorizedRuns)?data.authorizedRuns:[];
+ if(runs.some(r=>r.start===+a))return true;
+ data.authorizedRuns=[...runs,{start:+a,end:+b}];if(!persist()){data.authorizedRuns=runs;return false;}draw();return true;
+}
+function legacyRunHours(t0,t1){
  let result=0,start=mins(data.start),end=mins(data.end);
  if(t1<=t0)return 0;
  // Use local calendar dates rather than UTC days, including DST transitions.
@@ -76,7 +90,7 @@ function recoverSectorSpeed(p){
   p.direction=dir;b.direction=dir;
  }
 }
-data.pivots.forEach(recoverSectorSpeed);
+// Do not recalibrate old observations against unknown historical run dates.
 function simulate(p,when){
  const last=p.observations.at(-1);if(!last||!p.centre)return null;
  let a=last.angle,d=last.direction||p.direction||1;
@@ -284,7 +298,7 @@ function markCentreGPS(){
 }
 function addUI(){
  const section=document.createElement('section');
- section.innerHTML='<details id="pivotSettings"><summary style="font-weight:700;cursor:pointer;padding:7px 0">🌀 Pivot tracking</summary><p class="small">Mark the centre and arm on the map or use GPS while standing at the position. Predictions count only scheduled irrigation hours.</p><button id="pivotOpen" type="button">Set up / check pivots</button><button id="pivotMarker" type="button">Hide pivot arms</button></details>';
+ section.innerHTML='<details id="pivotSettings"><summary style="font-weight:700;cursor:pointer;padding:7px 0">🌀 Pivot tracking</summary><p class="small">Mark the centre and arm on the map or use GPS while standing at the position. Predictions count only overnight runs authorised after a completed lateral shift.</p><button id="pivotOpen" type="button">Set up / check pivots</button><button id="pivotMarker" type="button">Hide pivot arms</button></details>';
  const planning=el('planningSettings');
  if(planning)planning.insertAdjacentElement('afterend',section);
  else document.querySelector('aside')?.appendChild(section);
@@ -448,6 +462,6 @@ function reviewAfterLateral(n,continueNavigation){
 }
 
 function openDialog(){form();const notice=el('pivotSettingsSaved');if(notice)notice.hidden=true;el('pivotDialog').showModal();}
-window.irrigationPivots={reviewAfterLateral,isReviewing:()=>!!review,exportData:()=>structuredClone(data),importData:value=>{if(value&&Array.isArray(value.pivots)&&value.pivots.length===2){data=value;persist();form();}}};
+window.irrigationPivots={authorizeNextRun,reviewAfterLateral,isReviewing:()=>!!review,exportData:()=>structuredClone(data),importData:value=>{if(value&&Array.isArray(value.pivots)&&value.pivots.length===2){data=value;persist();form();}}};
 addUI();
 })();
